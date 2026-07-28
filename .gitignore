@@ -1,0 +1,31 @@
+# Codegraph index — local symlink, not committed
+.codegraph
+
+# OpenCode internal session state — local, not committed
+.omo/
+
+# Node / pnpm
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Electron build output
+out/
+
+# Capacitor build output
+android/app/build/
+android/.gradle/
+android/captures/
+android/local.properties
