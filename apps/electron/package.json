@@ -1,0 +1,31 @@
+{
+  "name": "@cookietodo/electron",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "pnpm run dev:all",
+    "dev:all": "concurrently -k -n renderer,electron -c yellow,blue \"pnpm dev:renderer\" \"pnpm dev:electron\"",
+    "dev:renderer": "pnpm --filter @cookietodo/renderer dev",
+    "dev:electron": "pnpm build:main && wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron --no-sandbox .",
+    "build:renderer": "pnpm --filter @cookietodo/renderer build",
+    "build:main": "tsc -p tsconfig.electron.json",
+    "build": "pnpm build:renderer && pnpm build:main",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../../src/tsconfig.json",
+    "test": "echo \"electron: covered by Playwright e2e seam — run pnpm e2e\" && exit 0",
+    "e2e": "pnpm exec playwright test --config=playwright.config.ts",
+    "pree2e": "pnpm build:main"
+  },
+  "dependencies": {
+    "electron": "30.5.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0",
+    "@types/node": "^20.14.0",
+    "concurrently": "^9.0.0",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.5.0",
+    "wait-on": "^8.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-electron",
+    "rootDir": ".",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["main/**/*.ts", "preload/**/*.ts"],
+  "exclude": ["node_modules", "dist-electron", "e2e"]
+}
