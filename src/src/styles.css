@@ -1,0 +1,52 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans CJK SC", "PingFang SC", sans-serif;
+  color: #1a1a1a;
+  background: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f0f0f0;
+    background: #1a1a1a;
+  }
+}
+button {
+  font: inherit;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover {
+  background: rgba(125, 125, 125, 0.1);
+}
+.hello-screen,
+.picker-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 24px;
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
