@@ -1,0 +1,24 @@
+{
+  "name": "cookietodo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.10",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @cookietodo/electron dev",
+    "build": "pnpm -r --filter ./src --filter @cookietodo/electron build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "pnpm -r test",
+    "e2e": "pnpm --filter @cookietodo/electron e2e"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.12.0"
+}
