@@ -29,3 +29,10 @@ android/app/build/
 android/.gradle/
 android/captures/
 android/local.properties
+
+# Electron compiled main/preload (built by apps/electron `build:main`)
+apps/electron/dist-electron/
+
+# Playwright e2e artifacts
+apps/electron/test-results/
+apps/electron/playwright-report/
