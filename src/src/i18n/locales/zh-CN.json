@@ -3,7 +3,22 @@
     "language-prompt": "语言",
     "language-zh": "简体中文",
     "language-en": "English",
-    "continue": "继续"
+    "continue": "继续",
+    "password": {
+      "welcome": "欢迎使用 cookietodo。",
+      "setup-prompt": "设置你的6位闹钟密码",
+      "setup-summary": "该密码用于关闭闹钟，请设置一个6位数字密码，并把它记住。",
+      "confirm-prompt": "请再次输入6位密码以确认",
+      "confirm-summary": "两次输入一致后即可保存。",
+      "mismatch": "两次输入不一致，请重新设置。",
+      "continue": "继续",
+      "back": "返回重设"
+    }
   },
-  "hello": "hello cookietodo"
+  "home": {
+    "welcome": "欢迎使用 cookietodo"
+  },
+  "settings": {
+    "title": "设置"
+  }
 }

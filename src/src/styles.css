@@ -22,13 +22,62 @@ button:hover {
   background: rgba(125, 125, 125, 0.1);
 }
 .hello-screen,
-.picker-screen {
+.picker-screen,
+.password-screen,
+.booting-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100vh;
   gap: 24px;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+
+.password-screen .password-input {
+  display: flex;
+  gap: 12px;
+}
+
+.password-input input {
+  width: 48px;
+  height: 56px;
+  text-align: center;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  color: inherit;
+}
+
+.password-input input:focus-visible {
+  outline: 2px solid #4a90d9;
+  outline-offset: 2px;
+}
+
+.password-input input[aria-invalid="true"] {
+  border-color: #d94a4a;
+}
+
+.mismatch-banner {
+  color: #d94a4a;
+  margin: 0;
+  font-size: 0.95rem;
+}
+@media (prefers-color-scheme: dark) {
+  .mismatch-banner {
+    color: #ff7676;
+  }
+  .password-input input[aria-invalid="true"] {
+    border-color: #ff7676;
+  }
+}
+
+.booting-screen::after {
+  content: "…";
+  opacity: 0.5;
 }
 
 fieldset {

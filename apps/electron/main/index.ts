@@ -1,20 +1,24 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
+import { createDeviceStore } from "./deviceStore.js";
+import { registerDeviceAdapterIpc } from "./ipcHandlers.js";
 
 /**
- * Electron main process for slice 1.
+ * Electron main process.
  *
  * Dev: BrowserWindow loads the Vite dev server at http://localhost:5173 — the
  * renderer workspace (`@cookietodo/renderer`) is pnpm-filtered via the root
  * `dev` task and runs in the same process tree.
  *
  * Prod: BrowserWindow loads the built static bundle from
- * `node_modules/@cookietodo/renderer/dist/index.html`. (Slice 1 is dev-only
- * boot verification; the prod-build wiring is exercised in slice 2.)
+ * `node_modules/@cookietodo/renderer/dist/index.html`.
  *
- * The preload script installs the in-memory `DeviceAdapter` stub backed by
- * `localStorage` on the renderer's `window` (replaced by `safeStorage` in slice 2).
+ * Slice 2 wires the main-process `DeviceAdapter` (backed by Electron
+ * `safeStorage` -> OS keychain) and registers the 8 `ipcMain.handle`
+ * channels the preload proxy reads. The renderer's `window.cookietodoDeviceAdapter`
+ * proxy routes through `ipcRenderer.invoke` so each adapter method returns a
+ * Promise to React (ADR 0009 Decision B + ADR 0010).
  */
 
 const __dirname_subst = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +64,11 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 void app.whenReady().then(async () => {
+  // Register the DeviceAdapter's IPC handlers BEFORE the first BrowserWindow
+  // is created so the renderer's `window.cookietodoDeviceAdapter()` calls
+  // (fired on first useEffect) cannot race the binding of the matching
+  // `ipcMain.handle` channel on the main side.
+  registerDeviceAdapterIpc(createDeviceStore());
   await createWindow();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

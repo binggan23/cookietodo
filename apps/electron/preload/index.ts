@@ -1,22 +1,48 @@
-import { contextBridge } from "electron";
+import type { DeviceAdapter } from "@cookietodo/renderer/device";
+import { contextBridge, ipcRenderer } from "electron";
 
 /**
- * Slice-1 preload shim.
+ * Slice-2 preload shim. Exposes a `DeviceAdapter` on the renderer's `window`
+ * that proxies every method through `ipcRenderer.invoke` to the main-process
+ * `safeStorage`-backed store (ADR 0009 Decision B + ADR 0010).
  *
- * Slice 1's renderer-side `DeviceAdapter` stub (`@cookietodo/renderer` ->
- * `electronRendererStub`) backs onto `localStorage` and does NOT need to be
- * injected by the preload — the renderer falls back to it when
- * `window.cookietodoDeviceAdapter` is undefined (see App.tsx).
+ * Each `ipcMain.handle` channel is named `cookietodo:device:<methodName>`
+ * (see `main/ipcHandlers.ts`); the preload forwards method arguments as
+ * positional `ipcRenderer.invoke` args, so the main-side handler receives
+ * them as `(_event, ...args)`.
  *
- * Slice 2 swaps this stub for a `safeStorage`-backed adapter injected here via
- * `contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter)`
- * where `adapter` is constructed in the main process and IPC'd into the
- * renderer through the preload. The shape of `DeviceAdapter` does not change
- * (ADR 0009 + ADR 0010 surface stays stable across slice 2).
- *
- * We still expose a no-op island today so the renderer's `window.cookietodoDeviceAdapter`
- * lookup stays a stable contract — `undefined` is the explicit "renderer-stub
- * in use" signal. (Removing the no-op would require the renderer to special-case
- * the missing global on every read.)
+ * The `contextBridge` boundary strips non-serializable values, but `Promise`
+ * return values are re-marshalled by Electron back to `Promise` on the
+ * renderer side (no manual callback-channel plumbing needed).
  */
-contextBridge.exposeInMainWorld("cookietodoDeviceAdapterIsolated", { ready: true });
+
+const CHANNEL_PREFIX = "cookietodo:device:";
+
+type Resolve<T extends (...args: never) => Promise<unknown>> = Awaited<ReturnType<T>>;
+
+const adapter: DeviceAdapter = {
+  getLocale: () =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}getLocale`) as Promise<
+      Resolve<DeviceAdapter["getLocale"]>
+    >,
+  saveLocale: (locale) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}saveLocale`, locale) as Promise<void>,
+  getDismissPassword: () =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}getDismissPassword`) as Promise<string | null>,
+  saveDismissPassword: (password) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}saveDismissPassword`, password) as Promise<void>,
+  getAlarmSoundId: () =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}getAlarmSoundId`) as Promise<
+      Resolve<DeviceAdapter["getAlarmSoundId"]>
+    >,
+  saveAlarmSoundId: (id) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}saveAlarmSoundId`, id) as Promise<void>,
+  getWebDAVCredentials: (url) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}getWebDAVCredentials`, url) as Promise<
+      Resolve<DeviceAdapter["getWebDAVCredentials"]>
+    >,
+  saveWebDAVCredentials: (url, credentials) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}saveWebDAVCredentials`, url, credentials) as Promise<void>,
+};
+
+contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter);

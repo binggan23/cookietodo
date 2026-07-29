@@ -1,17 +1,24 @@
 import type { AlarmSoundId, DeviceAdapter, Locale, WebDAVCredentials } from "./DeviceAdapter";
 
 /**
- * Slice-1 in-memory `DeviceAdapter` stub backing the renderer when no
+ * Slice-2 in-memory `DeviceAdapter` stub backing the renderer when no
  * shell-injected adapter is present on `window.cookietodoDeviceAdapter`.
  *
  * Backed by `localStorage` — values persist across page reloads in this
- * session but ARE NOT in the OS keychain. This is REPLACED by Electron
- * `safeStorage` -> OS keychain in slice 2 via the preload script; the
- * `DeviceAdapter` interface is not changing shape (slice 2 swaps persistence
- * behind the same TS surface).
+ * session but ARE NOT in the OS keychain. This shim is used only when the
+ * Electron preload has not (yet) injected a `safeStorage`-backed adapter
+ * (slice 2's preload does; this is the pure-web / test fallback).
  *
- * Used by `App.tsx` only when `window.cookietodoDeviceAdapter` is undefined —
- * i.e. the preload has not yet (or did not) inject a shell-specific adapter.
+ * All methods are async (`Promise`-returning) to match the slice-2
+ * `DeviceAdapter` surface — the Electron preload proxy routes through
+ * `ipcRenderer.invoke`, so the renderer must `await` every call; this stub
+ * never leaves the renderer thread so the underlying `localStorage` reads
+ * are wrapped in `Promise.resolve` to preserve the contract shape.
+ *
+ * The dismiss password is stored in `localStorage` ONLY because this stub
+ * is a fallback for contexts that lack the Electron preload (e.g. Vitest
+ * with no shell). The production Electron path never uses this stub — it
+ * receives the `safeStorage`-backed adapter via `window.cookietodoDeviceAdapter`.
  */
 const STORAGE_PREFIX = "cookietodo.device.";
 const KEY_LOCALE = `${STORAGE_PREFIX}locale`;
@@ -35,28 +42,28 @@ function localStorageOrThrow(): Storage {
 }
 
 export const electronRendererStub: DeviceAdapter = {
-  getLocale(): Locale | null {
+  async getLocale(): Promise<Locale | null> {
     const raw = localStorageOrThrow().getItem(KEY_LOCALE);
     return isLocale(raw) ? raw : null;
   },
-  saveLocale(locale: Locale): void {
+  async saveLocale(locale: Locale): Promise<void> {
     localStorageOrThrow().setItem(KEY_LOCALE, locale);
   },
-  getDismissPassword(): string | null {
+  async getDismissPassword(): Promise<string | null> {
     return localStorageOrThrow().getItem(KEY_DISMISS_PASSWORD) ?? null;
   },
-  saveDismissPassword(password: string): void {
+  async saveDismissPassword(password: string): Promise<void> {
     localStorageOrThrow().setItem(KEY_DISMISS_PASSWORD, password);
   },
-  getAlarmSoundId(): AlarmSoundId | null {
+  async getAlarmSoundId(): Promise<AlarmSoundId | null> {
     const raw = localStorageOrThrow().getItem(KEY_ALARM_SOUND_ID);
     const n = raw === null ? NaN : Number(raw);
     return isAlarmSoundId(n) ? n : null;
   },
-  saveAlarmSoundId(id: AlarmSoundId): void {
+  async saveAlarmSoundId(id: AlarmSoundId): Promise<void> {
     localStorageOrThrow().setItem(KEY_ALARM_SOUND_ID, String(id));
   },
-  getWebDAVCredentials(url: string): WebDAVCredentials | null {
+  async getWebDAVCredentials(url: string): Promise<WebDAVCredentials | null> {
     const raw = localStorageOrThrow().getItem(`${KEY_WEBDAV_PREFIX}${url}`);
     if (raw === null) {
       return null;
@@ -71,7 +78,7 @@ export const electronRendererStub: DeviceAdapter = {
       return null;
     }
   },
-  saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): void {
+  async saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): Promise<void> {
     localStorageOrThrow().setItem(`${KEY_WEBDAV_PREFIX}${url}`, JSON.stringify(credentials));
   },
 };

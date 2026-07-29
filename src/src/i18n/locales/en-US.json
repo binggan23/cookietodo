@@ -3,7 +3,22 @@
     "language-prompt": "Language",
     "language-zh": "简体中文",
     "language-en": "English",
-    "continue": "Continue"
+    "continue": "Continue",
+    "password": {
+      "welcome": "Welcome to cookietodo.",
+      "setup-prompt": "Set your 6-digit alarm password",
+      "setup-summary": "This password dismisses alarms. Set a 6-digit code and remember it.",
+      "confirm-prompt": "Re-enter the 6-digit password to confirm",
+      "confirm-summary": "Once both entries match, the password is saved.",
+      "mismatch": "Entries did not match. Please set the password again.",
+      "continue": "Continue",
+      "back": "Back to set"
+    }
   },
-  "hello": "hello cookietodo"
+  "home": {
+    "welcome": "Welcome to cookietodo"
+  },
+  "settings": {
+    "title": "Settings"
+  }
 }

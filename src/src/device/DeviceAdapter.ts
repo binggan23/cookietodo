@@ -2,17 +2,24 @@
  * DeviceAdapter — per-device preference store interface (ADR 0009 + ADR 0010).
  *
  * Implementations live in the native shells:
- *   - {@link apps/electron/preload/index.ts} (Electron: localStorage stub for v1;
- *     replaced by `safeStorage` -> OS keychain in slice 2).
+ *   - {@link apps/electron/preload/index.ts} (Electron: `safeStorage` ->
+ *     OS keychain via main-process IPC, slice 2).
  *   - {@link apps/android/} Capacitor + Android Keystore (slice 10).
  *
- * The methods are synchronous because the slice-1 Electron stub reads from
- * `localStorage`; the production keychain-backed implementations added in
- * later slices will wrap these in async patterns and the call sites will be
- * updated then. Slice 1 keeps the surface synchronous to land the
- * language-picker -> hello flow today.
+ * Every method is async because the Electron 30 sandboxed-renderer canonical
+ * pattern runs `safeStorage.encryptString` in the main process and reaches it
+ * via `ipcRenderer.invoke` (returns a Promise through the `contextBridge`).
+ * `sendSync` is deprecated and deadlocks under concurrent calls
+ * ([electron/electron#22727](https://github.com/electron/electron/issues/22727)),
+ * so the surface is async from slice 2 onward; the slice-1 in-memory
+ * `localStorage` stub (which never leaves the renderer) is wrapped in
+ * `Promise.resolve` to match.
  *
- * None of these values travel the Snapshot (ADR 0001).
+ * None of these values travel the Snapshot (ADR 0001). The dismiss password
+ * and WebDAV credentials MUST round-trip through `safeStorage.encryptString`
+ * (`safeStorage` is main-process-only); the locale and alarm-sound id are
+ * non-secret per ADR 0001's preference classification and may live as
+ * plaintext JSON inside the same OS-keyring-backed file.
  */
 export type Locale = "zh-CN" | "en-US";
 
@@ -25,20 +32,20 @@ export interface WebDAVCredentials {
 
 export interface DeviceAdapter {
   /** The user-chosen UI language; null until first-launch language picker. */
-  getLocale(): Locale | null;
-  saveLocale(locale: Locale): void;
+  getLocale(): Promise<Locale | null>;
+  saveLocale(locale: Locale): Promise<void>;
 
   /** 6-digit alarm dismiss password (set on first launch per ADR 0009 Decision B). */
-  getDismissPassword(): string | null;
-  saveDismissPassword(password: string): void;
+  getDismissPassword(): Promise<string | null>;
+  saveDismissPassword(password: string): Promise<void>;
 
   /** 1..5 selected alarm tone id (per ADR 0009 Decision A). */
-  getAlarmSoundId(): AlarmSoundId | null;
-  saveAlarmSoundId(id: AlarmSoundId): void;
+  getAlarmSoundId(): Promise<AlarmSoundId | null>;
+  saveAlarmSoundId(id: AlarmSoundId): Promise<void>;
 
   /** Per-device WebDAV credentials (per ADR 0008 + ADR 0010); keyed by endpoint URL. */
-  getWebDAVCredentials(url: string): WebDAVCredentials | null;
-  saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): void;
+  getWebDAVCredentials(url: string): Promise<WebDAVCredentials | null>;
+  saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): Promise<void>;
 }
 
 /**

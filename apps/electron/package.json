@@ -18,6 +18,7 @@
     "pree2e": "pnpm build:main"
   },
   "dependencies": {
+    "@cookietodo/renderer": "workspace:*",
     "electron": "30.5.1"
   },
   "devDependencies": {
