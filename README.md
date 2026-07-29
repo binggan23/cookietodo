@@ -1,10 +1,12 @@
 # README — cookietodo
 
+![node](https://img.shields.io/badge/node-%E2%89%A520.10-blue) ![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-orange)
+
 A cross-platform (Windows + Linux + Android) TypeScript todo + hard-alarm app. Local-first, with optional WebDAV sync. One UI/business-logic codebase; two native shells (Electron desktop, Capacitor Android).
 
 ## Status
 
-Pre-implementation. Architecture decided; no application code yet.
+Slice 1 landed — runnable pnpm-workspace monorepo scaffold + Electron hello-world + Playwright-Electron e2e seam. Requires **Node ≥ 20.10** and **pnpm ≥ 9** (`corepack enable && corepack prepare pnpm@latest --activate`).
 
 ## Domain vocabulary
 
