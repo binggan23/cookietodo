@@ -1,0 +1,9 @@
+{
+  "first-launch": {
+    "language-prompt": "语言",
+    "language-zh": "简体中文",
+    "language-en": "English",
+    "continue": "继续"
+  },
+  "hello": "hello cookietodo"
+}
