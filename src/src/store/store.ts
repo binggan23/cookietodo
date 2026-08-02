@@ -104,9 +104,16 @@ export type ListPatch = Partial<Omit<List, "id" | "createdAt" | "updatedAt" | "r
  * Slice-3 Store action surface. `load()` is async (the renderer calls it on
  * mount); all mutations are SYNC in shape and fire `adapter.saveSnapshot`
  * async after the state mutation.
+ *
+ * Slice 4 adds `replaceSnapshot(snapshot)`: the Import flow parses + Zod-validates
+ * a user-picked Snapshot file, then atomically swaps the in-memory store with it
+ * and persists via `saveSnapshot` (ADR 0001 + ADR 0003). Single authoritative
+ * writer per Import — matches ADR 0003 atomic-write budget; Import is NOT a
+ * field-level merge (that's slice 7 Sync — ADR 0004 3-way merge).
  */
 export interface CookietodoStoreApi {
   load(): Promise<void>;
+  replaceSnapshot(snapshot: Snapshot): void;
   createTodo(input: TodoInput): Todo;
   updateTodo(id: Todo["id"], patch: TodoPatch): void;
   deleteTodo(id: Todo["id"]): void;
@@ -180,6 +187,16 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
             return;
           }
           set({ loaded: true, error: String(err) });
+        }
+      },
+
+      replaceSnapshot(snapshot: Snapshot): void {
+        try {
+          const validated = SnapshotSchema.parse(snapshot);
+          set({ snapshot: validated, loaded: true, error: null });
+          persist();
+        } catch (err) {
+          set({ error: err instanceof z.ZodError ? err.message : String(err) });
         }
       },
 

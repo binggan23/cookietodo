@@ -250,3 +250,82 @@ fieldset {
   overflow: hidden;
   white-space: nowrap;
 }
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.settings-card {
+  min-width: 420px;
+  max-width: 560px;
+  padding: 24px 28px;
+  border-radius: 12px;
+  background: var(--card-bg, #ffffff);
+  color: inherit;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-bg: #2b2b2b;
+  }
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-header h1 {
+  margin: 0;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(125, 125, 125, 0.25);
+  padding-top: 12px;
+}
+
+.settings-section-heading {
+  font-weight: 600;
+  margin: 0;
+}
+
+.settings-section-summary {
+  margin: 0 0 4px;
+  color: rgba(125, 125, 125, 0.9);
+  font-size: 13px;
+}
+
+.settings-section button {
+  align-self: flex-start;
+}
+
+.settings-success {
+  color: #18794e;
+}
+
+.settings-error {
+  color: #d4380d;
+}
+
+.settings-store-error {
+  color: #d4380d;
+}
+
+.settings-shell-missing {
+  color: rgba(125, 125, 125, 0.9);
+  font-size: 12px;
+}

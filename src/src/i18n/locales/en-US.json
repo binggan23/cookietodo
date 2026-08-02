@@ -70,6 +70,22 @@
     "action-purge": "Delete Permanently"
   },
   "settings": {
-    "title": "Settings"
+    "title": "Settings",
+    "close": "Close",
+    "open": "Settings",
+    "snapshot": {
+      "section": "Data",
+      "summary": "Export your data to a strict-JSON `.todo.json` file; Import accepts hand-edited JSON or JSONC."
+    },
+    "export": "Export",
+    "export-success": "Exported to {{path}}",
+    "export-failed": "Export failed: {{error}}",
+    "export-dismissed": "Export cancelled",
+    "import": "Import",
+    "import-success": "Imported snapshot — store replaced.",
+    "import-failed": "Import failed: {{error}}",
+    "import-dismissed": "Import cancelled",
+    "store-error": "Store error: {{error}}",
+    "requires-shell": "Import/Export requires the Electron shell."
   }
 }

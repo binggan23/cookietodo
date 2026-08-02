@@ -10,21 +10,19 @@
  * (see `../../package.json` `exports` map entry `"./store": "./src/store/hooks.ts"`).
  */
 import { useStore } from "zustand";
-import type { List, Todo, Tombstone } from "../domain/types";
+import type { List, Snapshot, Todo, Tombstone } from "../domain/types";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
 import {
   type CookietodoStoreState,
   cookietodoStore,
   createCookietodoStore,
   type ListInput,
-  ListInputSchema,
   type ListPatch,
   type TodoInput,
-  TodoInputSchema,
   type TodoPatch,
 } from "./store";
 
-export type { List, Todo, Tombstone } from "../domain/types";
+export type { List, Snapshot, Todo, Tombstone } from "../domain/types";
 // Re-export the public store surface + input types so the UI imports one module.
 export {
   type CookietodoStoreState,
@@ -36,7 +34,7 @@ export {
   type TodoInput,
   TodoInputSchema,
   type TodoPatch,
-};
+} from "./store";
 
 /**
  * Test seam: construct a fresh bound store for an alternative adapter
@@ -71,6 +69,10 @@ export function useError(): string | null {
   return useStore(cookietodoStore, (s) => s.error);
 }
 
+export function useSnapshot(): Snapshot {
+  return useStore(cookietodoStore, (s) => s.snapshot);
+}
+
 /**
  * Action hooks — each returns the bound action so a UI consumer destructures
  * `const { createTodo } = useCreateTodo()` (or `useCreateTodo()` and call the
@@ -81,6 +83,10 @@ export function useError(): string | null {
 
 export function useLoad(): () => Promise<void> {
   return useStore(cookietodoStore, (s) => s.load);
+}
+
+export function useReplaceSnapshot(): (snapshot: Snapshot) => void {
+  return useStore(cookietodoStore, (s) => s.replaceSnapshot);
 }
 
 export function useCreateTodo(): (input: TodoInput) => Todo {

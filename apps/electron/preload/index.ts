@@ -1,6 +1,7 @@
 import type { DeviceAdapter } from "@cookietodo/renderer/device";
 import type { Snapshot } from "@cookietodo/renderer/domain";
 import type { StoreAdapter } from "@cookietodo/renderer/persistence";
+import type { SettingsAdapter } from "@cookietodo/renderer/settings";
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
@@ -27,6 +28,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const CHANNEL_PREFIX = "cookietodo:device:";
 const STORE_CHANNEL_PREFIX = "cookietodo:store:";
+const SETTINGS_CHANNEL_PREFIX = "cookietodo:settings:";
 
 type Resolve<T extends (...args: never) => Promise<unknown>> = Awaited<ReturnType<T>>;
 
@@ -66,5 +68,15 @@ const storeAdapter: Pick<StoreAdapter, "loadSnapshot" | "saveSnapshot"> = {
     ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}saveSnapshot`, snapshot) as Promise<void>,
 };
 
+const settingsAdapter: SettingsAdapter = {
+  exportSnapshot: (snapshot) =>
+    ipcRenderer.invoke(`${SETTINGS_CHANNEL_PREFIX}exportSnapshot`, snapshot) as Promise<
+      string | null
+    >,
+  importSnapshot: () =>
+    ipcRenderer.invoke(`${SETTINGS_CHANNEL_PREFIX}importSnapshot`) as Promise<Snapshot | null>,
+};
+
 contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter);
 contextBridge.exposeInMainWorld("cookietodoStoreAdapter", () => storeAdapter);
+contextBridge.exposeInMainWorld("cookietodoSettingsAdapter", () => settingsAdapter);

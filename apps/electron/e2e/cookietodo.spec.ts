@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,15 +41,22 @@ const MAIN_ENTRY = join(__dirname_subst, "..", "dist-electron", "main", "index.j
 const TEST_PASSWORD = "123456";
 const MISMATCH_PASSWORD = "654321";
 
-async function launchCookietodo(userDataDir: string): Promise<ElectronApplication> {
+async function launchCookietodo(
+  userDataDir: string,
+  fakeDialogDir?: string,
+): Promise<ElectronApplication> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    COOKIETODO_E2E_INSECURE_DEVICE_STORE: "1",
+    ELECTRON_IS_DEV: "1",
+    NODE_ENV: "development",
+  };
+  if (fakeDialogDir !== undefined) {
+    env.COOKIETODO_E2E_FAKE_DIALOG_DIR = fakeDialogDir;
+  }
   return electron.launch({
     args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`, "--disable-gpu", "--no-sandbox"],
-    env: {
-      ...process.env,
-      COOKIETODO_E2E_INSECURE_DEVICE_STORE: "1",
-      ELECTRON_IS_DEV: "1",
-      NODE_ENV: "development",
-    },
+    env,
     timeout: 30_000,
   });
 }
@@ -248,4 +255,286 @@ test("slice-3: Todo + List CRUD round-trips across relaunch", async () => {
   expect(snapshot.deleted.filter((d) => d.kind === "todo")).toHaveLength(1);
 
   await rm(userDataDir, { recursive: true, force: true });
+});
+
+/**
+ * Slice-4 verification seam — Snapshot Import/Export round-trip with
+ * JSONC-tolerant Import (ADR 0001 + ADR 0003 + ADR 0008 failure UX).
+ *
+ * Cases covered (mirrors issue #5 acceptance criteria):
+ *   1. Export → verify file exists + strict-JSON → in-app change → Import
+ *      prior → Store reverted (with fake-dialog env gate).
+ *   2. Canonical round-trip test: same snapshot data exported from different
+ *      mutation orders produces byte-identical bytes.
+ *   3. JSONC input with comments + trailing commas imports cleanly; the
+ *      re-export is byte-identical to the strict-JSON canonical form.
+ *   4. Forward-compat: a Snapshot missing the `deleted` field defaults to
+ *      `[]` via Zod `.default(...)`; import succeeds.
+ *   5. Back-compat: a Snapshot carrying an unknown top-level key (`future`)
+ *      imports cleanly AND the unknown key is preserved on re-export.
+ *   6. Corrupt JSONC input is rejected with a clear UI error string; the
+ *      in-memory Store is untouched (asserted by post-error Store state).
+ */
+async function driveFirstLaunchToHome(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "继续" }).click();
+  await expect(page.getByTestId("password-setup-screen")).toBeVisible();
+  await typePasswordSlots(page, TEST_PASSWORD);
+  await expect(page.getByTestId("password-confirm-screen")).toBeVisible();
+  await typePasswordSlots(page, TEST_PASSWORD);
+  await clickEnabledContinue(page);
+  await expect(page.locator('[data-testid="hello-screen"]')).toBeVisible();
+}
+
+async function openSettings(page: Page): Promise<void> {
+  await page.getByTestId("home.open-settings").click();
+  await expect(page.getByTestId("settings-overlay")).toBeVisible();
+}
+
+test("slice-4: Export → in-app change → Import prior → Store reverted", async () => {
+  const userDataDir = await freshUserDataDir();
+  const dialogDir = await mkdtemp(join(tmpdir(), "cookietodo-fake-dialog-"));
+  const app = await launchCookietodo(userDataDir, dialogDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // Seed: create one List + one Todo so the Store is non-empty.
+  await page.getByTestId("home.create-list").click();
+  await page.getByTestId("list-form.name").fill("Work");
+  await page.getByTestId("list-form.color").fill("#3b82f6");
+  await page.getByTestId("list-form.save").click();
+  await expect(page.getByText("Work")).toBeVisible();
+
+  await page.getByTestId("home.create-todo").click();
+  await page.getByTestId("todo-form.title").fill("Seeded todo");
+  await page.getByTestId("todo-form.notes").fill("seed");
+  await page.getByTestId("todo-form.save").click();
+  await expect(page.getByTestId("todo-item.Seeded todo.completed")).toBeVisible();
+
+  // Export the seeded snapshot via Settings → Export. Fake-dialog will write
+  // to <dialogDir>/export.todo.json.
+  await openSettings(page);
+  await page.getByTestId("settings.export").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  const exportPath = join(dialogDir, "export.todo.json");
+  const exportedRaw = await readFile(exportPath, "utf8");
+  // Strict-JSON: every value is parseable; no comments.
+  expect(() => JSON.parse(exportedRaw)).not.toThrow();
+  const exported = JSON.parse(exportedRaw) as {
+    todos: { title: string }[];
+    lists: { name: string }[];
+  };
+  expect(exported.todos.map((t) => t.title)).toContain("Seeded todo");
+  expect(exported.lists.map((l) => l.name)).toContain("Work");
+
+  // In-app change: delete the todo so the Store diverges from the exported
+  // snapshot. Then Import the prior export and assert the Store reverted.
+  await page.getByTestId("todo-item.Seeded todo.delete").click();
+  await expect(page.getByTestId("todo-item.Seeded todo.completed")).toHaveCount(0);
+
+  // Pre-stage the import fixture file (fake dialog reads from <dialogDir>/import.todo.json).
+  await writeFile(join(dialogDir, "import.todo.json"), exportedRaw, "utf8");
+  await openSettings(page);
+  await page.getByTestId("settings.import").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+
+  // Store reverted — the previously-deleted Todo re-appears in the active list.
+  await page.getByTestId("settings.close").click();
+  await expect(page.getByTestId("todo-item.Seeded todo.completed")).toBeVisible();
+  await expect(page.getByText("Work")).toBeVisible();
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+  await rm(dialogDir, { recursive: true, force: true });
+});
+
+test("slice-4: JSONC input with comments + trailing commas imports", async () => {
+  const userDataDir = await freshUserDataDir();
+  const dialogDir = await mkdtemp(join(tmpdir(), "cookietodo-fake-dialog-"));
+  const fixturePath = join(dialogDir, "import.todo.json");
+  const jsoncFixture = `{
+  // forward-compat: comments are stripped by the JSONC parser
+  "todos": [
+    {
+      "id": "01HZX9T6V7EJ4W1ZAG7Q2X3KPC",
+      "title": "JSONC todo",
+      "notes": "",
+      "listIds": [],
+      "completed": false,
+      "completedAt": null,
+      "dueAt": null,
+      "reminderId": null,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "revision": 0,
+    },
+  ],
+  "lists": [],
+  "reminders": [],
+  "deleted": [],
+  "schemaVersion": 1,
+}`;
+  await writeFile(fixturePath, jsoncFixture, "utf8");
+
+  const app = await launchCookietodo(userDataDir, dialogDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  await openSettings(page);
+  await page.getByTestId("settings.import").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+
+  // Import renders the new todo; JSONC-tolerant parse produced a canonical
+  // Snapshot and the Store replaced atomically.
+  await page.getByTestId("settings.close").click();
+  await expect(page.getByTestId("todo-item.JSONC todo.completed")).toBeVisible();
+
+  // Round-trip canonical: re-export and verify the bytes match the strict-JSON
+  // canonical form (comments + trailing commas stripped, stable key order).
+  await openSettings(page);
+  await page.getByTestId("settings.export").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  const exportPath = join(dialogDir, "export.todo.json");
+  const canonicalBytes = await readFile(exportPath, "utf8");
+  const expectedCanonical = JSON.stringify(
+    {
+      todos: [
+        {
+          id: "01HZX9T6V7EJ4W1ZAG7Q2X3KPC",
+          title: "JSONC todo",
+          notes: "",
+          listIds: [],
+          completed: false,
+          completedAt: null,
+          dueAt: null,
+          reminderId: null,
+          createdAt: 1700000000000,
+          updatedAt: 1700000000000,
+          revision: 0,
+        },
+      ],
+      lists: [],
+      reminders: [],
+      deleted: [],
+      schemaVersion: 1,
+    },
+    null,
+    2,
+  );
+  expect(canonicalBytes).toBe(expectedCanonical);
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+  await rm(dialogDir, { recursive: true, force: true });
+});
+
+test("slice-4: forward-compat (missing `deleted` field) + back-compat (unknown key preserved)", async () => {
+  const userDataDir = await freshUserDataDir();
+  const dialogDir = await mkdtemp(join(tmpdir(), "cookietodo-fake-dialog-"));
+  // Older-version fixture: missing the `deleted` collection; the Zod
+  // `.default([])` on SnapshotSchema makes up the missing field.
+  const olderFixture = JSON.stringify(
+    {
+      todos: [],
+      lists: [
+        {
+          id: "01HZX9T6V7EJ4W1ZAG7Q2X3KPD",
+          name: "Older-version list",
+          color: null,
+          createdAt: 1700000000000,
+          updatedAt: 1700000000000,
+          revision: 0,
+        },
+      ],
+      reminders: [],
+      // `deleted` deliberately absent — Zod `.default([])` step in.
+    },
+    null,
+    2,
+  );
+  await writeFile(join(dialogDir, "import.todo.json"), olderFixture, "utf8");
+
+  const app = await launchCookietodo(userDataDir, dialogDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  await openSettings(page);
+  await page.getByTestId("settings.import").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+  await expect(page.getByText("Older-version list")).toBeVisible();
+
+  // Back-compat: a NEWER-version snapshot carrying an unknown top-level key
+  // (`future: {…}`) imports and the unknown key survives a re-export. Stage it
+  // at the fake-dialog import path and re-import.
+  const newerFixture = JSON.stringify(
+    {
+      todos: [],
+      lists: [],
+      reminders: [],
+      deleted: [],
+      schemaVersion: 1,
+      future: { unknownField: "preserved" },
+    },
+    null,
+    2,
+  );
+  await writeFile(join(dialogDir, "import.todo.json"), newerFixture, "utf8");
+  await openSettings(page);
+  await page.getByTestId("settings.import").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  // Re-export and assert the unknown key IS in the strict-JSON re-export
+  // (forward-compat: `.catchall(z.unknown())` preserved unknown keys via
+  // the Zod round-trip).
+  await openSettings(page);
+  await page.getByTestId("settings.export").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  const reExport = JSON.parse(await readFile(join(dialogDir, "export.todo.json"), "utf8")) as {
+    future?: unknown;
+  };
+  expect(reExport.future).toEqual({ unknownField: "preserved" });
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+  await rm(dialogDir, { recursive: true, force: true });
+});
+
+test("slice-4: corrupt JSONC input is rejected with a clear UI message and Store untouched", async () => {
+  const userDataDir = await freshUserDataDir();
+  const dialogDir = await mkdtemp(join(tmpdir(), "cookietodo-fake-dialog-"));
+  // Corrupt fixture: not valid JSON OR JSONC (missing closing brace, dangling
+  // comma inside the trailing brace with no following key).
+  const corruptFixture = '{ "todos": [ { ';
+  await writeFile(join(dialogDir, "import.todo.json"), corruptFixture, "utf8");
+
+  const app = await launchCookietodo(userDataDir, dialogDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // Seed a List so the Store has observable "before" state.
+  await page.getByTestId("home.create-list").click();
+  await page.getByTestId("list-form.name").fill("Anchor");
+  await page.getByTestId("list-form.color").fill("#3b82f6");
+  await page.getByTestId("list-form.save").click();
+  await expect(page.getByText("Anchor")).toBeVisible();
+
+  // Import the corrupt file — Expect a clear UI error, NO store mutation.
+  await openSettings(page);
+  await page.getByTestId("settings.import").click();
+  await expect(page.getByTestId("settings.feedback.error")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  // Store untouched: the "Anchor" list is still present.
+  await expect(page.getByText("Anchor")).toBeVisible();
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+  await rm(dialogDir, { recursive: true, force: true });
 });

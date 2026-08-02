@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const DEVICE_CHANNEL_PREFIX = "cookietodo:device:";
 const STORE_CHANNEL_PREFIX = "cookietodo:store:";
+const SETTINGS_CHANNEL_PREFIX = "cookietodo:settings:";
 
 const deviceAdapter = {
   getLocale: () => ipcRenderer.invoke(`${DEVICE_CHANNEL_PREFIX}getLocale`),
@@ -22,5 +23,12 @@ const storeAdapter = {
   saveSnapshot: (snapshot) => ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}saveSnapshot`, snapshot),
 };
 
+const settingsAdapter = {
+  exportSnapshot: (snapshot) =>
+    ipcRenderer.invoke(`${SETTINGS_CHANNEL_PREFIX}exportSnapshot`, snapshot),
+  importSnapshot: () => ipcRenderer.invoke(`${SETTINGS_CHANNEL_PREFIX}importSnapshot`),
+};
+
 contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => deviceAdapter);
 contextBridge.exposeInMainWorld("cookietodoStoreAdapter", () => storeAdapter);
+contextBridge.exposeInMainWorld("cookietodoSettingsAdapter", () => settingsAdapter);

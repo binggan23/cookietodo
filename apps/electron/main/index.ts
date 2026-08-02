@@ -4,6 +4,7 @@ import { app, BrowserWindow, shell } from "electron";
 import { createDeviceStore } from "./deviceStore.js";
 import { ElectronStoreAdapter } from "./ElectronStoreAdapter.js";
 import { registerDeviceAdapterIpc } from "./ipcHandlers.js";
+import { registerSettingsAdapterIpc } from "./settingsHandlers.js";
 import { registerStoreAdapterIpc } from "./storeHandlers.js";
 
 /**
@@ -74,6 +75,10 @@ void app.whenReady().then(async () => {
   // Slice-3: Store IPC must register before createWindow — App's
   // `window.cookietodoStoreAdapter().loadSnapshot()` fires on mount.
   registerStoreAdapterIpc(new ElectronStoreAdapter());
+  // Slice-4: Settings IPC (Import/Export native dialogs) must register before
+  // createWindow — the SettingsView overlay's
+  // `window.cookietodoSettingsAdapter()` calls fire on overlay mount.
+  registerSettingsAdapterIpc();
   await createWindow();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

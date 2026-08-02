@@ -70,6 +70,22 @@
     "action-purge": "彻底删除"
   },
   "settings": {
-    "title": "设置"
+    "title": "设置",
+    "close": "关闭",
+    "open": "设置",
+    "snapshot": {
+      "section": "数据",
+      "summary": "将数据导出为严格的 JSON `.todo.json` 文件；导入支持手写的 JSON 或 JSONC 文件。"
+    },
+    "export": "导出",
+    "export-success": "已导出到 {{path}}",
+    "export-failed": "导出失败：{{error}}",
+    "export-dismissed": "已取消导出",
+    "import": "导入",
+    "import-success": "已导入快照，本地数据已替换。",
+    "import-failed": "导入失败：{{error}}",
+    "import-dismissed": "已取消导入",
+    "store-error": "本地数据错误：{{error}}",
+    "requires-shell": "导入/导出需要在 Electron 桌面端使用。"
   }
 }

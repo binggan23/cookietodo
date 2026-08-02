@@ -12,10 +12,11 @@ import {
 } from "../store/hooks";
 import { DeletedView } from "./DeletedView";
 import { ListForm } from "./ListForm";
+import { SettingsView } from "./SettingsView";
 import { TodoForm } from "./TodoForm";
 
 type Mode = "flat" | "grouped";
-type OverlayForm = "todo" | "list" | null;
+type OverlayForm = "todo" | "list" | "settings" | null;
 
 export function HomeView(): JSX.Element {
   const { t } = useTranslation();
@@ -54,6 +55,14 @@ export function HomeView(): JSX.Element {
         <button type="button" data-testid="home.create-list" onClick={() => setForm("list")}>
           {t("home.create-list")}
         </button>
+        <button
+          type="button"
+          data-testid="home.open-settings"
+          onClick={() => setForm("settings")}
+          aria-label={t("settings.open")}
+        >
+          ⚙
+        </button>
       </div>
 
       {showLoading && <p>{t("home.loading")}</p>}
@@ -80,6 +89,7 @@ export function HomeView(): JSX.Element {
 
       {form === "todo" && <TodoForm onClose={() => setForm(null)} />}
       {form === "list" && <ListForm onClose={() => setForm(null)} />}
+      {form === "settings" && <SettingsView onClose={() => setForm(null)} />}
     </div>
   );
 }
