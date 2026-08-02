@@ -2,7 +2,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, shell } from "electron";
 import { createDeviceStore } from "./deviceStore.js";
+import { ElectronStoreAdapter } from "./ElectronStoreAdapter.js";
 import { registerDeviceAdapterIpc } from "./ipcHandlers.js";
+import { registerStoreAdapterIpc } from "./storeHandlers.js";
 
 /**
  * Electron main process.
@@ -42,7 +44,7 @@ async function createWindow(): Promise<BrowserWindow> {
     width: 1280,
     height: 800,
     webPreferences: {
-      preload: join(__dirname_subst, "..", "preload", "index.js"),
+      preload: join(__dirname_subst, "..", "preload", "index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -69,6 +71,9 @@ void app.whenReady().then(async () => {
   // (fired on first useEffect) cannot race the binding of the matching
   // `ipcMain.handle` channel on the main side.
   registerDeviceAdapterIpc(createDeviceStore());
+  // Slice-3: Store IPC must register before createWindow — App's
+  // `window.cookietodoStoreAdapter().loadSnapshot()` fires on mount.
+  registerStoreAdapterIpc(new ElectronStoreAdapter());
   await createWindow();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

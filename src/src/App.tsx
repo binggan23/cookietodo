@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { DeviceAdapter, Locale } from "./device/DeviceAdapter";
 import { electronRendererStub } from "./device/electronRendererStub";
 import i18next, { pickInitialLocale } from "./i18n";
+import { HomeView } from "./ui/HomeView";
 import { PasswordInput } from "./ui/PasswordInput";
 
 /**
@@ -198,6 +199,7 @@ export function App(): JSX.Element {
     return (
       <main className="hello-screen" data-testid="hello-screen">
         <h1>{t("home.welcome")}</h1>
+        <HomeView />
       </main>
     );
   }

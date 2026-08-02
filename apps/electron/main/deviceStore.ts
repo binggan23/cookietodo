@@ -117,12 +117,33 @@ async function writeEnvelope(env: DeviceStoreEnvelope): Promise<void> {
   await writeFile(storePath(), JSON.stringify(env, null, 2), "utf8");
 }
 
+function allowE2EPlaintextDeviceStore(): boolean {
+  return process.env.COOKIETODO_E2E_INSECURE_DEVICE_STORE === "1";
+}
+
 function assertEncryptionAvailable(): void {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!safeStorage.isEncryptionAvailable() && !allowE2EPlaintextDeviceStore()) {
     throw new DeviceAdapterUnavailable(
       "safeStorage encryption unavailable — install libsecret / gnome-keyring-daemon or run on a keyring-enabled OS (slice 2 ADR 0009)",
     );
   }
+}
+
+function encryptDeviceSecret(secret: string): string {
+  assertEncryptionAvailable();
+  if (allowE2EPlaintextDeviceStore() && !safeStorage.isEncryptionAvailable()) {
+    return Buffer.from(secret, "utf8").toString("base64");
+  }
+  return safeStorage.encryptString(secret).toString("base64");
+}
+
+function decryptDeviceSecret(cipherText: string): string {
+  assertEncryptionAvailable();
+  const cipher = Buffer.from(cipherText, "base64");
+  if (allowE2EPlaintextDeviceStore() && !safeStorage.isEncryptionAvailable()) {
+    return cipher.toString("utf8");
+  }
+  return safeStorage.decryptString(cipher);
 }
 
 /**
@@ -151,15 +172,11 @@ export function createDeviceStore(): DeviceAdapter {
       if (env.dismissPasswordCipher === null) {
         return null;
       }
-      assertEncryptionAvailable();
-      const cipher = Buffer.from(env.dismissPasswordCipher, "base64");
-      return safeStorage.decryptString(cipher);
+      return decryptDeviceSecret(env.dismissPasswordCipher);
     },
     async saveDismissPassword(password: string): Promise<void> {
-      assertEncryptionAvailable();
-      const cipher = safeStorage.encryptString(password);
       const env = await readEnvelope();
-      env.dismissPasswordCipher = cipher.toString("base64");
+      env.dismissPasswordCipher = encryptDeviceSecret(password);
       await writeEnvelope(env);
     },
 
@@ -179,16 +196,14 @@ export function createDeviceStore(): DeviceAdapter {
       if (!stored) {
         return null;
       }
-      assertEncryptionAvailable();
       return {
-        user: safeStorage.decryptString(Buffer.from(stored.userCipher, "base64")),
-        pass: safeStorage.decryptString(Buffer.from(stored.passCipher, "base64")),
+        user: decryptDeviceSecret(stored.userCipher),
+        pass: decryptDeviceSecret(stored.passCipher),
       };
     },
     async saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): Promise<void> {
-      assertEncryptionAvailable();
-      const userCipher = safeStorage.encryptString(credentials.user).toString("base64");
-      const passCipher = safeStorage.encryptString(credentials.pass).toString("base64");
+      const userCipher = encryptDeviceSecret(credentials.user);
+      const passCipher = encryptDeviceSecret(credentials.pass);
       const env = await readEnvelope();
       env.webdav = { ...env.webdav, [url]: { userCipher, passCipher } };
       await writeEnvelope(env);

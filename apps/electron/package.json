@@ -10,7 +10,7 @@
     "dev:renderer": "pnpm --filter @cookietodo/renderer dev",
     "dev:electron": "pnpm build:main && wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron --no-sandbox .",
     "build:renderer": "pnpm --filter @cookietodo/renderer build",
-    "build:main": "tsc -p tsconfig.electron.json",
+    "build:main": "tsc -p tsconfig.electron.json && cp preload/index.cjs dist-electron/preload/index.cjs",
     "build": "pnpm build:renderer && pnpm build:main",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../../src/tsconfig.json",
     "test": "echo \"electron: covered by Playwright e2e seam — run pnpm e2e\" && exit 0",
@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@cookietodo/renderer": "workspace:*",
-    "electron": "30.5.1"
+    "electron": "30.5.1",
+    "zod": "^4.4.0"
   },
   "devDependencies": {
     "@playwright/test": "1.62.0",

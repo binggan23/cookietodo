@@ -16,7 +16,58 @@
     }
   },
   "home": {
-    "welcome": "Welcome to cookietodo"
+    "welcome": "Welcome to cookietodo",
+    "toggle-flat": "Flat",
+    "toggle-grouped": "Group by List",
+    "create-todo": "New Todo",
+    "create-list": "New List",
+    "empty": "No todos yet. Create one from the top right.",
+    "loading": "Loading local data…"
+  },
+  "todo": {
+    "form-title-create": "New Todo",
+    "form-title-edit": "Edit Todo",
+    "field-title": "Title",
+    "field-title-max": "Title is capped at 200 characters",
+    "field-notes": "Notes",
+    "field-notes-edit": "Edit",
+    "field-notes-preview": "Preview",
+    "field-due-at": "Due at",
+    "field-list-ids": "Lists",
+    "field-reminder": "Reminder",
+    "field-reminder-disabled-no-due": "Set a due time before turning on a reminder",
+    "field-reminder-not-available": "Reminders arrive in a later release",
+    "field-completed": "Completed",
+    "action-complete": "Complete",
+    "action-uncomplete": "Mark not done",
+    "action-delete": "Delete",
+    "action-cancel": "Cancel",
+    "action-save": "Save",
+    "completed-banner": "Completed",
+    "validation-title-required": "Title is required",
+    "validation-title-too-long": "Title must be 200 characters or fewer",
+    "validation-reminder-needs-due": "A reminder requires a due time"
+  },
+  "list": {
+    "form-title-create": "New List",
+    "form-title-edit": "Edit List",
+    "field-name": "List name",
+    "field-name-max": "List name is capped at 80 characters",
+    "field-color": "Color",
+    "action-cancel": "Cancel",
+    "action-save": "Save",
+    "validation-name-required": "List name is required",
+    "validation-name-too-long": "List name must be 80 characters or fewer",
+    "color-default": "Default"
+  },
+  "deleted": {
+    "heading": "Recently Deleted",
+    "empty": "No deleted items.",
+    "item-kind-todo": "Todo",
+    "item-kind-list": "List",
+    "item-deleted-at": "Deleted at {{time}}",
+    "action-restore": "Restore",
+    "action-purge": "Delete Permanently"
   },
   "settings": {
     "title": "Settings"

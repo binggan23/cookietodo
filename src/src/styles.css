@@ -35,6 +35,157 @@ button:hover {
   box-sizing: border-box;
 }
 
+.hello-screen {
+  justify-content: flex-start;
+  overflow-y: auto;
+  height: 100vh;
+  padding-top: 24px;
+  text-align: left;
+}
+.hello-screen h1 {
+  margin: 0;
+}
+.home-view {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.home-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.home-body {
+  min-height: 0;
+}
+.todo-list,
+.recently-deleted ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.todo-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+}
+.todo-completed .todo-title {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.todo-notes-excerpt {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+.todo-due-at {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.todo-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.todo-group h3 {
+  margin: 0;
+}
+.recently-deleted {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid currentColor;
+}
+.recently-deleted ul {
+  gap: 6px;
+}
+.recently-deleted li {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.9rem;
+}
+.form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--form-overlay-bg, rgba(0, 0, 0, 0.4));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  overflow-y: auto;
+  align-items: stretch;
+  max-width: 480px;
+  margin: 0 auto;
+  height: auto;
+  border: 1px solid currentColor;
+}
+.form-overlay label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-overlay input[type="text"],
+.form-overlay textarea,
+.form-overlay input[type="datetime-local"] {
+  padding: 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font: inherit;
+  background: transparent;
+  color: inherit;
+}
+.form-overlay textarea {
+  min-height: 80px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.form-overlay select[multiple] {
+  min-height: 80px;
+  background: transparent;
+  color: inherit;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.char-count {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  align-self: flex-end;
+}
+.notes-mode {
+  display: flex;
+  gap: 4px;
+}
+.notes-preview {
+  min-height: 80px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 8px;
+  background: transparent;
+}
+.form-error {
+  color: #d94a4a;
+  margin: 0;
+}
+.helper-text {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
 .password-screen .password-input {
   display: flex;
   gap: 12px;

@@ -1,4 +1,6 @@
 import type { DeviceAdapter } from "@cookietodo/renderer/device";
+import type { Snapshot } from "@cookietodo/renderer/domain";
+import type { StoreAdapter } from "@cookietodo/renderer/persistence";
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
@@ -14,9 +16,17 @@ import { contextBridge, ipcRenderer } from "electron";
  * The `contextBridge` boundary strips non-serializable values, but `Promise`
  * return values are re-marshalled by Electron back to `Promise` on the
  * renderer side (no manual callback-channel plumbing needed).
+ *
+ * Slice 3 adds the `cookietodoStoreAdapter` window-global that proxies the 2
+ * persistence channels (`loadSnapshot` / `saveSnapshot`) to the main-process
+ * `ElectronStoreAdapter` (ADR 0003 + ADR 0001). The renderer's singleton
+ * `cookietodoStore` reads `window.cookietodoStoreAdapter?.()` and falls back
+ * to `MemoryStoreAdapter` when no preload is present (Vitest, headless Vite
+ * preview) — mirrors the slice-2 `electronRendererStub` convention.
  */
 
 const CHANNEL_PREFIX = "cookietodo:device:";
+const STORE_CHANNEL_PREFIX = "cookietodo:store:";
 
 type Resolve<T extends (...args: never) => Promise<unknown>> = Awaited<ReturnType<T>>;
 
@@ -45,4 +55,16 @@ const adapter: DeviceAdapter = {
     ipcRenderer.invoke(`${CHANNEL_PREFIX}saveWebDAVCredentials`, url, credentials) as Promise<void>,
 };
 
+/**
+ * Store adapter proxy — only `loadSnapshot` / `saveSnapshot` are bridged
+ * this slice (Import/Export wired in a later slice — see `storeHandlers.ts`).
+ */
+const storeAdapter: Pick<StoreAdapter, "loadSnapshot" | "saveSnapshot"> = {
+  loadSnapshot: () =>
+    ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}loadSnapshot`) as Promise<Snapshot>,
+  saveSnapshot: (snapshot) =>
+    ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}saveSnapshot`, snapshot) as Promise<void>,
+};
+
 contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter);
+contextBridge.exposeInMainWorld("cookietodoStoreAdapter", () => storeAdapter);

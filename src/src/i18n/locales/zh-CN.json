@@ -16,7 +16,58 @@
     }
   },
   "home": {
-    "welcome": "欢迎使用 cookietodo"
+    "welcome": "欢迎使用 cookietodo",
+    "toggle-flat": "平铺",
+    "toggle-grouped": "按清单分组",
+    "create-todo": "新建待办",
+    "create-list": "新建清单",
+    "empty": "还没有待办，点右上角新建一条。",
+    "loading": "正在读取本地数据…"
+  },
+  "todo": {
+    "form-title-create": "新建待办",
+    "form-title-edit": "编辑待办",
+    "field-title": "标题",
+    "field-title-max": "标题最多 200 个字符",
+    "field-notes": "备注",
+    "field-notes-edit": "编辑",
+    "field-notes-preview": "预览",
+    "field-due-at": "到期时间",
+    "field-list-ids": "所属清单",
+    "field-reminder": "提醒",
+    "field-reminder-disabled-no-due": "需先设置到期时间才能开启提醒",
+    "field-reminder-not-available": "提醒功能将在后续版本上线",
+    "field-completed": "已完成",
+    "action-complete": "完成",
+    "action-uncomplete": "取消完成",
+    "action-delete": "删除",
+    "action-cancel": "取消",
+    "action-save": "保存",
+    "completed-banner": "已完成",
+    "validation-title-required": "请填写标题",
+    "validation-title-too-long": "标题不能超过 200 个字符",
+    "validation-reminder-needs-due": "提醒必须基于到期时间"
+  },
+  "list": {
+    "form-title-create": "新建清单",
+    "form-title-edit": "编辑清单",
+    "field-name": "清单名",
+    "field-name-max": "清单名最多 80 个字符",
+    "field-color": "颜色",
+    "action-cancel": "取消",
+    "action-save": "保存",
+    "validation-name-required": "请填写清单名",
+    "validation-name-too-long": "清单名不能超过 80 个字符",
+    "color-default": "默认"
+  },
+  "deleted": {
+    "heading": "最近删除",
+    "empty": "没有已删除的项目。",
+    "item-kind-todo": "待办",
+    "item-kind-list": "清单",
+    "item-deleted-at": "删除于 {{time}}",
+    "action-restore": "恢复",
+    "action-purge": "彻底删除"
   },
   "settings": {
     "title": "设置"
