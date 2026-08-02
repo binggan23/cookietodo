@@ -329,3 +329,46 @@ fieldset {
   color: rgba(125, 125, 125, 0.9);
   font-size: 12px;
 }
+
+/* Slice 5 — Alarm Event fullscreen takeover (ADR 0007). */
+.alarm-event {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #000;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.alarm-event-title {
+  font-size: 48px;
+  margin: 0;
+}
+
+.alarm-event-subtitle {
+  font-size: 24px;
+  margin: 0;
+}
+
+.alarm-event audio {
+  display: none; /* audible only; no chrome on the takeover screen */
+}
+
+.alarm-event button {
+  font-size: 24px;
+  padding: 12px 48px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+
+.alarm-event button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

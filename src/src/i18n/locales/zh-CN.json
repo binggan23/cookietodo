@@ -36,7 +36,10 @@
     "field-list-ids": "所属清单",
     "field-reminder": "提醒",
     "field-reminder-disabled-no-due": "需先设置到期时间才能开启提醒",
-    "field-reminder-not-available": "提醒功能将在后续版本上线",
+    "field-reminder-on": "已开启闹钟提醒",
+    "field-reminder-trigger-at": "提醒时间",
+    "field-reminder-trigger-default": "默认与到期时间一致",
+    "field-reminder-trigger-offset-hint": "早于到期时间可提前提醒",
     "field-completed": "已完成",
     "action-complete": "完成",
     "action-uncomplete": "取消完成",
@@ -47,6 +50,11 @@
     "validation-title-required": "请填写标题",
     "validation-title-too-long": "标题不能超过 200 个字符",
     "validation-reminder-needs-due": "提醒必须基于到期时间"
+  },
+  "alarm": {
+    "event-title": "闹钟",
+    "event-dismiss": "关闭闹钟",
+    "event-subtitle": "待办："
   },
   "list": {
     "form-title-create": "新建清单",

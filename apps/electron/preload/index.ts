@@ -1,5 +1,6 @@
+import type { AlarmAdapter, AlarmFiredPayload } from "@cookietodo/renderer/alarm";
 import type { DeviceAdapter } from "@cookietodo/renderer/device";
-import type { Snapshot } from "@cookietodo/renderer/domain";
+import type { Reminder, Snapshot, Todo } from "@cookietodo/renderer/domain";
 import type { StoreAdapter } from "@cookietodo/renderer/persistence";
 import type { SettingsAdapter } from "@cookietodo/renderer/settings";
 import { contextBridge, ipcRenderer } from "electron";
@@ -29,6 +30,7 @@ import { contextBridge, ipcRenderer } from "electron";
 const CHANNEL_PREFIX = "cookietodo:device:";
 const STORE_CHANNEL_PREFIX = "cookietodo:store:";
 const SETTINGS_CHANNEL_PREFIX = "cookietodo:settings:";
+const ALARM_CHANNEL_PREFIX = "cookietodo:alarm:";
 
 type Resolve<T extends (...args: never) => Promise<unknown>> = Awaited<ReturnType<T>>;
 
@@ -77,6 +79,34 @@ const settingsAdapter: SettingsAdapter = {
     ipcRenderer.invoke(`${SETTINGS_CHANNEL_PREFIX}importSnapshot`) as Promise<Snapshot | null>,
 };
 
+/**
+ * Slice-5 AlarmAdapter proxy. `scheduleAlarm` / `cancelAlarm` /
+ * `requestPermission` are renderer→main `invoke` channels. `onAlarmFired`
+ * wraps a `ipcRenderer.on` listener around the main→renderer push channel
+ * (`cookietodo:alarm:fired`) and returns an unsubscribe — the wrap-listener
+ * pattern (an explicit named function + `removeListener` on cleanup) so the
+ * store's per-instance subscription can tear down without leaking the
+ * listener across store reconstructions.
+ */
+const alarmAdapter: AlarmAdapter = {
+  scheduleAlarm: (reminder: Reminder, todo: Todo) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}scheduleAlarm`, reminder, todo) as Promise<void>,
+  cancelAlarm: (reminderId: Reminder["id"]) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}cancelAlarm`, reminderId) as Promise<void>,
+  onAlarmFired: (callback: (payload: AlarmFiredPayload) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AlarmFiredPayload): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("cookietodo:alarm:fired", listener);
+    return () => {
+      ipcRenderer.removeListener("cookietodo:alarm:fired", listener);
+    };
+  },
+  requestPermission: (kind: "alarm") =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}requestPermission`, kind) as Promise<"granted">,
+};
+
 contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter);
 contextBridge.exposeInMainWorld("cookietodoStoreAdapter", () => storeAdapter);
 contextBridge.exposeInMainWorld("cookietodoSettingsAdapter", () => settingsAdapter);
+contextBridge.exposeInMainWorld("cookietodoAlarmAdapter", () => alarmAdapter);

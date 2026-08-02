@@ -22,7 +22,8 @@
       "!**/.omo",
       "!**/.codegraph",
       "!**/apps/android",
-      "!**/coverage"
+      "!**/coverage",
+      "!**/scripts"
     ]
   },
   "formatter": {

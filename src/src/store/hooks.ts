@@ -10,6 +10,7 @@
  * (see `../../package.json` `exports` map entry `"./store": "./src/store/hooks.ts"`).
  */
 import { useStore } from "zustand";
+import type { AlarmAdapter } from "../alarm/AlarmAdapter";
 import type { List, Snapshot, Todo, Tombstone } from "../domain/types";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
 import {
@@ -41,12 +42,31 @@ export {
  * (e.g. `MemoryStoreAdapter` in Vitest). The default singleton resolves from
  * `window.cookietodoStoreAdapter` (Wave 3 preload) or falls back to
  * `MemoryStoreAdapter`; this hook lets a test override that decision.
+ *
+ * Slice 5: takes a 2nd `alarmAdapter` so the per-test store can be wired to a
+ * fresh `createElectronAlarmStub()`. When a test passes `adapter` without
+ * `alarmAdapter` — that's a slice-4 callersite that forgot the slice-5
+ * addition — we throw at hook-time so the misuse fails loud. Slice-4 callers
+ * that pass nothing continue to use the singleton (the contract is unchanged
+ * for the no-arg slot).
  */
-export function useCookietodoStore(adapter?: StoreAdapter): CookietodoStoreState {
-  const store = adapter === undefined ? cookietodoStore : createCookietodoStore(adapter);
+export function useCookietodoStore(
+  adapter?: StoreAdapter,
+  alarmAdapter?: AlarmAdapter,
+): CookietodoStoreState {
+  const store =
+    adapter === undefined
+      ? cookietodoStore
+      : alarmAdapter === undefined
+        ? null // unreachable — thrown below for the early-fail ergonomic misuse
+        : createCookietodoStore(adapter, alarmAdapter);
+  if (store === null) {
+    throw new Error(
+      "useCookietodoStore: when overriding the StoreAdapter you must also pass an AlarmAdapter (slice 5 — ADR 0006 Reminder state-machine expects a deterministic subscription).",
+    );
+  }
   return useStore(store);
 }
-
 /** Data selector hooks — bound to the singleton {@link cookietodoStore}. */
 
 export function useTodos(): Todo[] {

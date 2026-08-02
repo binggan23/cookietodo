@@ -43,12 +43,16 @@
 import { ulid } from "ulid";
 import * as z from "zod";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import type { AlarmAdapter, AlarmFiredPayload } from "../alarm/AlarmAdapter";
+import { electronAlarmStub } from "../alarm/electronRendererStub";
 import {
   epochMs,
   HEX_COLOR_RE,
   IdSchema,
   type List,
   ListSchema,
+  type Reminder,
+  ReminderSchema,
   type Snapshot,
   SnapshotSchema,
   type Todo,
@@ -71,18 +75,66 @@ import type { StoreAdapter } from "../persistence/StoreAdapter";
  * `TodoSchema.parse` on the assembled entity (every createTodo path
  * re-parses through `TodoSchema.parse`, so the superRefine runs there).
  *
+ * Slice 5 adds `reminderTriggerAt` — the fire time of the Reminder entity.
+ * Coupled invariant enforced here via `superRefine` (mirrors TodoSchema's
+ * reminderId↔dueAt link): `reminderId !== null ⟺ reminderTriggerAt !== null`
+ * AND `reminderId !== null ⟹ dueAt !== null`. The store passes this value
+ * through to the assembled Reminder as `triggerAt` (per AC #4: defaults to
+ * the Todo's `dueAt` in the editor UI; the user can override it separately
+ * for "remind me 5 minutes before due").
+ *
  * Re-derived in `hooks.ts` so the UI imports the input type, not the full
  * `Todo`.
  */
-export const TodoInputSchema = z.strictObject({
-  title: z.string().max(200),
-  notes: z.string(),
-  listIds: z.array(IdSchema),
-  completed: z.boolean(),
-  completedAt: epochMs.nullable(),
-  dueAt: epochMs.nullable(),
-  reminderId: IdSchema.nullable(),
-});
+export const TodoInputSchema = z
+  .strictObject({
+    title: z.string().max(200),
+    notes: z.string(),
+    listIds: z.array(IdSchema),
+    completed: z.boolean(),
+    completedAt: epochMs.nullable(),
+    dueAt: epochMs.nullable(),
+    reminderId: IdSchema.nullable(),
+    /** Slice 5 — fire time for the Reminder entity. `null` when `reminderId` is `null`. */
+    reminderTriggerAt: epochMs.nullable(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.reminderId !== null && input.dueAt === null) {
+      // Mirror the slice-3 TodoSchema superRefine at the input boundary so
+      // `TodoInputSchema.safeParse` itself rejects the half-built reminder —
+      // the slice-3 contract was enforced only on `TodoSchema.parse`; the
+      // slice-5 input surface moves the guard earlier so the form-layer
+      // validation never reaches `createTodo`.
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Todo.reminderId != null requires Todo.dueAt != null — a Reminder cannot exist without a dueAt (ADR 0006).",
+        path: ["dueAt"],
+      });
+    }
+    if (input.reminderId !== null && input.reminderTriggerAt === null) {
+      // Reminder armed but no triggerAt — UI bug (the form's `triggerAt`
+      // input must default to the Todo's `dueAt`). Reject at the Zod
+      // boundary so a half-built Reminder never reaches the Store.
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Todo.reminderId != null requires Todo.reminderTriggerAt != null — a Reminder entity needs a fire time (ADR 0006 + slice 5).",
+        path: ["reminderTriggerAt"],
+      });
+    }
+    if (input.reminderId === null && input.reminderTriggerAt !== null) {
+      // Orphan triggerAt — a UI bug the other direction. Reject so the
+      // Reminder entity is not created half-armed; the superRefine pairs
+      // 1:1 with the reminderId hole.
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Todo.reminderTriggerAt != null requires Todo.reminderId != null — orphan triggerAt (slice 5).",
+        path: ["reminderId"],
+      });
+    }
+  });
 export type TodoInput = z.infer<typeof TodoInputSchema>;
 
 /**
@@ -96,7 +148,18 @@ export const ListInputSchema = z.strictObject({
 export type ListInput = z.infer<typeof ListInputSchema>;
 
 /** Patch allowed on `updateTodo`. All fields optional; partial of `Todo`. */
-export type TodoPatch = Partial<Omit<Todo, "id" | "createdAt" | "updatedAt" | "revision">>;
+export type TodoPatch = Partial<Omit<Todo, "id" | "createdAt" | "updatedAt" | "revision">> & {
+  /**
+   * Slice 5 — fire time for the Reminder entity when `reminderId` changes.
+   * Lives here (not on the Todo entity) because `triggerAt` is a Reminder
+   * field, but `updateTodo` is the canonical mutation that arming/retiring
+   * a Reminder passes through. Coupled with `reminderId`:
+   *   - `reminderId === null` ⟺ `reminderTriggerAt === null`
+   *   - `reminderId !== null` ⟹ `reminderTriggerAt !== null`
+   *   - Both undefined ⟹ leave the Reminder entity as-is (no field mutation).
+   */
+  reminderTriggerAt?: number | null;
+};
 /** Patch allowed on `updateList`. */
 export type ListPatch = Partial<Omit<List, "id" | "createdAt" | "updatedAt" | "revision">>;
 
@@ -153,11 +216,26 @@ declare global {
 const EMPTY_SNAPSHOT: Snapshot = SnapshotSchema.parse({});
 
 /**
- * Construct a cookietodo vanilla store bound to the given {@link StoreAdapter}.
- * Pure constructor — no module side effects. The adapter resolution decision
- * (renderer IPC vs in-memory stub) is the caller's, not the store's.
+ * Construct a cookietodo vanilla store bound to the given {@link StoreAdapter}
+ * and {@link AlarmAdapter}. Pure constructor — no module side effects. The
+ * adapter resolution decisions (renderer IPC vs in-memory stub) are the
+ * caller's, not the store's.
+ *
+ * Slice 5: the store takes a 2nd `alarmAdapter` param so a Vitest per-test
+ * store can be wired to a fresh stub. The store subscribes to
+ * `alarmAdapter.onAlarmFired` ONCE INSIDE this factory (per-instance
+ * subscription) so the singleton `cookietodoStore` exported below and each
+ * per-test `createCookietodoStore(...)` callsite each get exactly one
+ * subscriber bound to the adapter they were constructed with — never zero
+ * (singleton + stub race) and never double (外公 closure leak). When the
+ * shell pushes a fire event for a Reminder we own, we mutate its
+ * `state pending → 'fired'` per ADR 0006 (slice-5 floor — `fired` stays
+ * `fired`; the password-dismiss + complete=true mutation lands in slice 6).
  */
-export function createCookietodoStore(adapter: StoreAdapter): StoreApi<CookietodoStoreState> {
+export function createCookietodoStore(
+  adapter: StoreAdapter,
+  alarmAdapter: AlarmAdapter,
+): StoreApi<CookietodoStoreState> {
   return createStore<CookietodoStoreState>((set, get) => {
     /**
      * Best-effort snapshot persistence. Fire-and-forget: never throws into
@@ -171,6 +249,74 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
         console.error("cookietodo store: adapter.saveSnapshot failed", err);
       });
     };
+
+    /**
+     * Fire-and-forget alarm scheduling — the synchronous mutation has
+     * already written the Reminder entity to the snapshot, so a
+     * `scheduleAlarm` failure means the Store + on-disk have a `pending`
+     * Reminder whose timer never armed; ADR 0002 Level B requires "must
+     * fire" so slice 6 must surface this to the UI. Slice 5 floor logs
+     * the error and proceeds — the Store's contract is "we wrote the
+     * Reminder and asked the shell to arm it"; the shell's arm-failure UX
+     * is downstream of this slice's AC scope.
+     */
+    const scheduleIfArmed = (reminder: Reminder | null, todo: Todo): void => {
+      if (reminder === null) return;
+      if (reminder.state !== "pending") return;
+      void alarmAdapter.scheduleAlarm(reminder, todo).catch((err: unknown) => {
+        console.error("cookietodo store: alarmAdapter.scheduleAlarm failed", err);
+      });
+    };
+    const cancelIfArmed = (reminderId: Reminder["id"] | null): void => {
+      if (reminderId === null) return;
+      void alarmAdapter.cancelAlarm(reminderId).catch((err: unknown) => {
+        console.error("cookietodo store: alarmAdapter.cancelAlarm failed", err);
+      });
+    };
+
+    /**
+     * Update a stored Reminder (used by the slice-5 fire callback — slice
+     * 6 will extend this to also mutate `Todo.completed` / `completedAt`).
+     */
+    const updateReminder = (id: Reminder["id"], patch: Partial<Reminder>): void => {
+      const state = get();
+      const idx = state.snapshot.reminders.findIndex((r) => r.id === id);
+      if (idx === -1) {
+        set({ error: `updateReminder: no Reminder with id "${id}"` });
+        return;
+      }
+      const existing = state.snapshot.reminders[idx];
+      if (existing === undefined) {
+        set({ error: `updateReminder: no Reminder with id "${id}"` });
+        return;
+      }
+      try {
+        const updated = ReminderSchema.parse({
+          ...existing,
+          ...patch,
+          id: existing.id,
+          todoId: existing.todoId,
+          createdAt: existing.createdAt,
+          updatedAt: Date.now(),
+          revision: existing.revision + 1,
+        });
+        const reminders = state.snapshot.reminders.map((r, i) => (i === idx ? updated : r));
+        set({ snapshot: { ...state.snapshot, reminders }, error: null });
+        persist();
+      } catch (err) {
+        set({ error: err instanceof z.ZodError ? err.message : String(err) });
+      }
+    };
+
+    // Per-instance subscription — DEFINES the contract a Vitest store
+    // exercises when it asserts `subscribers.length === 1`. When the shell
+    // pushes a fire event, locate the Reminder we own and flip its state.
+    // Mirrors the slice-2/store singleton adapter resolution: each store
+    // construct subscribes once; the singleton passes the same adapter it
+    // was constructed with.
+    void alarmAdapter.onAlarmFired((payload: AlarmFiredPayload) => {
+      updateReminder(payload.reminderId, { state: "fired" });
+    });
 
     return {
       snapshot: EMPTY_SNAPSHOT,
@@ -203,7 +349,7 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
       createTodo(input: TodoInput): Todo {
         try {
           const now = Date.now();
-          const assembled: Todo = {
+          const assembledTodo: Todo = {
             id: ulid() as Todo["id"],
             title: input.title,
             notes: input.notes,
@@ -216,12 +362,42 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
             updatedAt: now,
             revision: 0,
           };
-          const todo = TodoSchema.parse(assembled);
+          const todo = TodoSchema.parse(assembledTodo);
+
+          let newReminder: Reminder | null = null;
+          if (todo.reminderId !== null && input.reminderTriggerAt !== null) {
+            const assembledReminder: Reminder = {
+              id: todo.reminderId as Reminder["id"],
+              todoId: todo.id,
+              triggerAt: input.reminderTriggerAt,
+              recur: null, // slice 5 floor — recurrence scheduling lands in slice 9.
+              state: "pending",
+              snoozedUntil: null,
+              permissionRefusedAt: null,
+              recurredTo: null,
+              createdAt: now,
+              updatedAt: now,
+              revision: 0,
+            };
+            newReminder = ReminderSchema.parse(assembledReminder);
+          }
+
           set((state) => ({
-            snapshot: { ...state.snapshot, todos: [...state.snapshot.todos, todo] },
+            snapshot: {
+              ...state.snapshot,
+              todos: [...state.snapshot.todos, todo],
+              reminders:
+                newReminder === null
+                  ? state.snapshot.reminders
+                  : [...state.snapshot.reminders, newReminder],
+            },
             error: null,
           }));
           persist();
+
+          // After persist fire: schedule the timer. Idempotent on
+          // reminder.id — re-scheduling overwrites the prior arming.
+          scheduleIfArmed(newReminder, todo);
           return todo;
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
@@ -254,9 +430,83 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
             updatedAt: Date.now(),
             revision: existing.revision + 1,
           });
+          let reminders = state.snapshot.reminders;
+
+          const oldReminderId = existing.reminderId;
+          const newReminderId = updated.reminderId;
+          let newReminderForSchedule: Reminder | null = null;
+
+          if (oldReminderId !== null && oldReminderId !== newReminderId) {
+            // Reminder retired: cancel the timer, transition entity to 'cancelled'
+            // (ADR 0006 — `cancelled` is terminal and survived for slice 7's
+            // merge engine; slice 5 does not GC).
+            cancelIfArmed(oldReminderId);
+            reminders = reminders.map((r) =>
+              r.id === oldReminderId
+                ? ReminderSchema.parse({
+                    ...r,
+                    state: "cancelled",
+                    updatedAt: Date.now(),
+                    revision: r.revision + 1,
+                  })
+                : r,
+            );
+          }
+
+          if (
+            newReminderId !== null &&
+            newReminderId !== oldReminderId &&
+            patch.reminderTriggerAt !== undefined &&
+            patch.reminderTriggerAt !== null
+          ) {
+            // Brand-new Reminder (different id from the previous): build the
+            // entity, push it to the snapshot, schedule it.
+            const now = Date.now();
+            const assembled: Reminder = {
+              id: newReminderId as Reminder["id"],
+              todoId: updated.id,
+              triggerAt: patch.reminderTriggerAt,
+              recur: null,
+              state: "pending",
+              snoozedUntil: null,
+              permissionRefusedAt: null,
+              recurredTo: null,
+              createdAt: now,
+              updatedAt: now,
+              revision: 0,
+            };
+            newReminderForSchedule = ReminderSchema.parse(assembled);
+            reminders = [...reminders, newReminderForSchedule];
+          } else if (
+            newReminderId !== null &&
+            newReminderId === oldReminderId &&
+            patch.reminderTriggerAt !== undefined &&
+            patch.reminderTriggerAt !== null
+          ) {
+            // Same Reminder entity — user changed dueAt or triggerAt — re-arm.
+            // cancelAlarm + scheduleAlarm sequence preserves the "idempotent on
+            // reminder.id" contract on AlarmAdapter.
+            cancelIfArmed(newReminderId);
+            const existingReminder = reminders.find((r) => r.id === newReminderId);
+            if (existingReminder !== undefined) {
+              const updatedReminder: Reminder = ReminderSchema.parse({
+                ...existingReminder,
+                triggerAt: patch.reminderTriggerAt,
+                updatedAt: Date.now(),
+                revision: existingReminder.revision + 1,
+              });
+              newReminderForSchedule = updatedReminder;
+              reminders = reminders.map((r) => (r.id === newReminderId ? updatedReminder : r));
+            }
+          }
+
           const todos = state.snapshot.todos.map((t, i) => (i === idx ? updated : t));
-          set({ snapshot: { ...state.snapshot, todos }, error: null });
+          set({ snapshot: { ...state.snapshot, todos, reminders }, error: null });
           persist();
+
+          if (newReminderForSchedule !== null) {
+            scheduleIfArmed(newReminderForSchedule, updated);
+          }
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
         }
@@ -274,7 +524,26 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
           set({ error: `deleteTodo: no Todo with id "${id}"` });
           return;
         }
+        // Cancel any armed alarm + mark the Reminder entity cancelled (ADR 0006
+        // — `cancelled` is terminal; slice 7's merge engine treats it as
+        // monotonic over `cleared`).
+        if (deleted.reminderId !== null) {
+          cancelIfArmed(deleted.reminderId);
+        }
         const now = Date.now();
+        let reminders = state.snapshot.reminders;
+        if (deleted.reminderId !== null) {
+          reminders = reminders.map((r) =>
+            r.id === deleted.reminderId
+              ? ReminderSchema.parse({
+                  ...r,
+                  state: "cancelled",
+                  updatedAt: now,
+                  revision: r.revision + 1,
+                })
+              : r,
+          );
+        }
         const tombstone: Tombstone = {
           id: deleted.id,
           kind: "todo",
@@ -283,7 +552,12 @@ export function createCookietodoStore(adapter: StoreAdapter): StoreApi<Cookietod
         };
         const todos = state.snapshot.todos.filter((t) => t.id !== id);
         set({
-          snapshot: { ...state.snapshot, todos, deleted: [...state.snapshot.deleted, tombstone] },
+          snapshot: {
+            ...state.snapshot,
+            todos,
+            reminders,
+            deleted: [...state.snapshot.deleted, tombstone],
+          },
           error: null,
         });
         persist();
@@ -518,5 +792,21 @@ const lazyStoreAdapter: StoreAdapter = {
   exportSnapshot: () => resolveStoreAdapter().exportSnapshot(),
 };
 
-export const cookietodoStore: StoreApi<CookietodoStoreState> =
-  createCookietodoStore(lazyStoreAdapter);
+function resolveAlarmAdapter(): AlarmAdapter {
+  if (typeof window === "undefined") {
+    return electronAlarmStub;
+  }
+  return window.cookietodoAlarmAdapter?.() ?? electronAlarmStub;
+}
+
+const lazyAlarmAdapter: AlarmAdapter = {
+  scheduleAlarm: (reminder, todo) => resolveAlarmAdapter().scheduleAlarm(reminder, todo),
+  cancelAlarm: (reminderId) => resolveAlarmAdapter().cancelAlarm(reminderId),
+  onAlarmFired: (cb) => resolveAlarmAdapter().onAlarmFired(cb),
+  requestPermission: (kind) => resolveAlarmAdapter().requestPermission(kind),
+};
+
+export const cookietodoStore: StoreApi<CookietodoStoreState> = createCookietodoStore(
+  lazyStoreAdapter,
+  lazyAlarmAdapter,
+);

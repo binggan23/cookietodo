@@ -10,7 +10,7 @@
     "dev:renderer": "pnpm --filter @cookietodo/renderer dev",
     "dev:electron": "pnpm build:main && wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron --no-sandbox .",
     "build:renderer": "pnpm --filter @cookietodo/renderer build",
-    "build:main": "tsc -p tsconfig.electron.json && cp preload/index.cjs dist-electron/preload/index.cjs",
+    "build:main": "tsc -p tsconfig.electron.json && cp preload/index.cjs dist-electron/preload/index.cjs && mkdir -p dist-electron/assets/alarm-sounds && cp ../../src/assets/alarm-sounds/*.mp3 dist-electron/assets/alarm-sounds/ && cp ../../src/assets/alarm-sounds/sources.md dist-electron/assets/alarm-sounds/sources.md",
     "build": "pnpm build:renderer && pnpm build:main",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../../src/tsconfig.json",
     "test": "echo \"electron: covered by Playwright e2e seam — run pnpm e2e\" && exit 0",

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import { ulid } from "ulid";
 import type { Todo } from "../domain/types";
 import { TodoInputSchema, useCreateTodo, useLists, useUpdateTodo } from "../store/hooks";
 
@@ -33,7 +34,15 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
   const [notesMode, setNotesMode] = useState<NotesMode>("edit");
   const [dueAt, setDueAt] = useState<string>(epochToInputValue(todo?.dueAt ?? null));
   const [listIds, setListIds] = useState<string[]>(todo?.listIds ?? []);
-  // reminder remains disabled this slice — never set reminderId.
+  // Slice 5: reminder toggle is LIVE — defaults to the Todo's existing
+  // reminder state; disabled while dueAt is null (AC #1: reminder field
+  // greyed out / disabled when dueAt is null). `!= null` (loose) so a brand
+  // new Todo (todo === undefined) resolves to false, NOT true — a strict
+  // `!== null` on undefined yields true and would arm the reminder by default.
+  const [reminderOn, setReminderOn] = useState<boolean>(todo?.reminderId != null);
+  // `triggerAt` defaults to the Todo's `dueAt` in the editor UI (AC #4); the
+  // user may override it separately ("remind me 5 minutes before due").
+  const [triggerAt, setTriggerAt] = useState<string>(epochToInputValue(todo?.dueAt ?? null));
   const [error, setError] = useState<string | null>(null);
 
   function handleListIdsChange(e: React.ChangeEvent<HTMLSelectElement>): void {
@@ -42,6 +51,21 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
   }
 
   const reminderDisabled = dueAt === "";
+
+  function handleReminderToggle(): void {
+    if (reminderDisabled) return;
+    const next = !reminderOn;
+    setReminderOn(next);
+    // When the user first turns the reminder on, default triggerAt to the
+    // current dueAt input value (AC #4 — the default; the user can then
+    // override the triggerAt field separately).
+    if (next && triggerAt === "") {
+      setTriggerAt(dueAt);
+    }
+    if (!next) {
+      setTriggerAt("");
+    }
+  }
 
   function handleSubmit(): void {
     const trimmed = title;
@@ -54,6 +78,14 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
       return;
     }
     const dueEpoch = inputValueToEpoch(dueAt);
+    // reminderTriggerAt: only when the reminder is on AND a due time exists.
+    // The store's TodoInputSchema.superRefine rejects orphan combos.
+    const reminderActive = reminderOn && dueEpoch !== null;
+    const triggerEpoch = reminderActive ? inputValueToEpoch(triggerAt) : null;
+    if (reminderActive && triggerEpoch === null) {
+      setError(t("todo.validation-reminder-needs-due"));
+      return;
+    }
     const input = {
       title: trimmed,
       notes,
@@ -61,7 +93,8 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
       completed: todo?.completed ?? false,
       completedAt: todo?.completedAt ?? null,
       dueAt: dueEpoch,
-      reminderId: null,
+      reminderId: reminderActive ? (todo?.reminderId ?? (ulid() as Todo["id"])) : null,
+      reminderTriggerAt: reminderActive ? triggerEpoch : null,
     };
     const parsed = TodoInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -74,6 +107,8 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
         notes: parsed.data.notes,
         listIds: parsed.data.listIds,
         dueAt: parsed.data.dueAt,
+        reminderId: parsed.data.reminderId,
+        reminderTriggerAt: parsed.data.reminderTriggerAt,
       });
     } else {
       createTodo(parsed.data);
@@ -153,19 +188,29 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
         {t("todo.field-reminder")}
         <input
           type="checkbox"
-          checked={false}
+          checked={reminderOn}
           disabled={reminderDisabled}
           data-testid="todo-form.reminder-toggle"
-          onChange={() => {
-            /* reminder disabled slice 3 */
-          }}
+          onChange={handleReminderToggle}
         />
         {reminderDisabled ? (
           <span className="helper-text">{t("todo.field-reminder-disabled-no-due")}</span>
         ) : (
-          <span className="helper-text">{t("todo.field-reminder-not-available")}</span>
+          <span className="helper-text">{t("todo.field-reminder-on")}</span>
         )}
       </label>
+      {reminderOn && !reminderDisabled && (
+        <label>
+          {t("todo.field-reminder-trigger-at")}
+          <input
+            type="datetime-local"
+            value={triggerAt}
+            data-testid="todo-form.reminder-trigger-at"
+            onChange={(e) => setTriggerAt(e.target.value)}
+          />
+          <span className="helper-text">{t("todo.field-reminder-trigger-offset-hint")}</span>
+        </label>
+      )}
       {error && (
         <p role="alert" className="form-error">
           {error}

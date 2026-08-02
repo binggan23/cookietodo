@@ -18,7 +18,9 @@
     "e2e": "pnpm --filter @cookietodo/electron e2e"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0"
+    "@biomejs/biome": "^2.0.0",
+    "@breezystack/lamejs": "^1.2.7",
+    "tsx": "^4.23.2"
   },
   "packageManager": "pnpm@9.12.0"
 }

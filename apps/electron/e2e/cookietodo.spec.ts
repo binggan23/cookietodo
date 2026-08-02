@@ -538,3 +538,106 @@ test("slice-4: corrupt JSONC input is rejected with a clear UI message and Store
   await rm(userDataDir, { recursive: true, force: true });
   await rm(dialogDir, { recursive: true, force: true });
 });
+
+/**
+ * Slice-5 verification seam — the Alarm Event fires end-to-end on desktop
+ * (ADR 0002 Level B + ADR 0007 + ADR 0009 Decision A).
+ *
+ * Flows:
+ *   1. First launch → home (reuses `driveFirstLaunchToHome`).
+ *   2. Create a Todo with a `dueAt` set to the NEXT minute boundary (the
+ *      `datetime-local` input is minute-precision — AC #3's "5 seconds in
+ *      the future" is expressed as "at the next minute boundary, ≤ 60s out",
+ *      which is the smallest deterministic value the form can express).
+ *   3. Toggle the Reminder ON (enabled now that `dueAt` is non-null — AC #1);
+ *      the `triggerAt` input auto-fills with the same `dueAt` value (AC #4).
+ *   4. Save → Store writes a Reminder entity + calls
+ *      `ElectronAlarmAdapter.scheduleAlarm` (Node `setTimeout`).
+ *   5. Wait for the fullscreen Alarm Event `BrowserWindow` (AC #3:
+ *      `alwaysOnTop / fullscreen / skipTaskbar`), assert the Todo title is
+ *      visible (AC #5), tap Dismiss (AC #5 placeholder), assert the window
+ *      closes (window count 2 → 1).
+ *
+ * Audio presence is NOT asserted — CI containers often lack an audio device;
+ * the seam's contract is the window lifecycle + dismiss, and the tone's
+ * audibility is covered by the `<audio src>` attribute being set to the
+ * `cookietodo-sound://` URL (the main process serves it; CI just can't emit
+ * sound).
+ */
+function nextMinuteLocalInput(): string {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() + 1);
+  return toLocalDateTimeInput(d.getTime());
+}
+
+/**
+ * Count the app's live windows EXCLUDING the detached DevTools window — dev
+ * mode (`ELECTRON_IS_DEV=1`) calls `openDevTools({ mode: "detach" })` in
+ * `main/index.ts`, which spawns an extra `BrowserWindow` that would otherwise
+ * make "window count" assertions flaky (main + alarm + devtools = 3).
+ */
+function liveWindowCount(app: ElectronApplication): number {
+  return app.windows().filter((w) => !w.isClosed() && !w.url().startsWith("devtools://")).length;
+}
+
+test("slice-5: alarm fires at dueAt, fullscreen Dismiss closes alarm window", async () => {
+  const userDataDir = await freshUserDataDir();
+  const app = await launchCookietodo(userDataDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // Create a Todo with dueAt at the next minute boundary + reminder ON.
+  await page.getByTestId("home.create-todo").click();
+  await expect(page.getByTestId("todo-form")).toBeVisible();
+  await page.getByTestId("todo-form.title").fill("Wake me");
+  const dueAtLocal = nextMinuteLocalInput();
+  await page.getByTestId("todo-form.due-at").fill(dueAtLocal);
+  // AC #1: the reminder toggle is ENABLED once dueAt is non-null.
+  await expect(page.getByTestId("todo-form.reminder-toggle")).toBeEnabled();
+  await page.getByTestId("todo-form.reminder-toggle").check();
+  // AC #4: triggerAt auto-fills to the dueAt value.
+  await expect(page.getByTestId("todo-form.reminder-trigger-at")).toHaveValue(dueAtLocal);
+  await page.getByTestId("todo-form.save").click();
+  await expect(page.getByTestId("todo-item.Wake me.completed")).toBeVisible();
+
+  // Wait for the alarm window to open. The triggerAt is the next minute
+  // boundary (0–60s out), and the main-process `setTimeout` fires it exactly
+  // on time — so the wait can span up to ~60s. The alarm window may also
+  // ALREADY be open (if the boundary passed between form fill and save, the
+  // delay clamps to 0 and fires immediately) — check existing windows before
+  // registering the event listener to avoid a race with the fire.
+  const alreadyOpen = app.windows().find((w) => w.url().includes("/alarm"));
+  const alarmWindow =
+    alreadyOpen ??
+    (await app.waitForEvent("window", {
+      predicate: (w) => w.url().includes("/alarm"),
+      timeout: 90_000,
+    }));
+  await alarmWindow.waitForLoadState("domcontentloaded");
+
+  // Two windows open now: main + fullscreen alarm (DevTools excluded).
+  await expect.poll(() => liveWindowCount(app), { timeout: 10_000 }).toBe(2);
+
+  // Alarm window shows the todo title (AC #5 bare-bones UI).
+  await expect(alarmWindow.getByTestId("alarm-event")).toBeVisible();
+  await expect(alarmWindow.getByTestId("alarm-event.todo-title")).toHaveText("Wake me");
+
+  // Tap Dismiss — the placeholder closes the window (AC #5). The window
+  // closes synchronously through the main-process `cancelAlarm` (the click's
+  // IPC round-trip). Playwright's `click()` throws "Target page ... has been
+  // closed" when the click action itself tears down the page mid-gesture —
+  // that IS the expected outcome here, so the click error is swallowed and
+  // the close event is asserted directly on the alarm page.
+  const closePromise = alarmWindow.waitForEvent("close", { timeout: 10_000 });
+  await alarmWindow
+    .getByTestId("alarm-event.dismiss")
+    .click()
+    .catch(() => {
+      // Expected: the Dismiss click closed the page before the action completed.
+    });
+  await closePromise;
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+});
