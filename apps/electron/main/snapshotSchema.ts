@@ -46,6 +46,8 @@ const ReminderSchema = z.strictObject({
   recur: RecurrenceSchema.nullable(),
   state: z.enum(["pending", "fired", "cleared", "cancelled"]),
   snoozedUntil: epochMs.nullable(),
+  snoozeCount: z.number().int().nonnegative().default(0),
+  pendingPostRebootBanner: z.boolean().default(false),
   permissionRefusedAt: epochMs.nullable(),
   recurredTo: IdSchema.nullable(),
   createdAt: epochMs,

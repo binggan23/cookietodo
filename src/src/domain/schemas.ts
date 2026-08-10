@@ -6,9 +6,10 @@
  * Field shapes are verbatim from ADR 0006 §"Decision — type definitions".
  *
  * IMPORTANT drift guards:
- *   - `snoozedUntil` (NOT `snoozeCount`) lives on `Reminder`. ADR 0007's
- *     "10min×3 snooze" is scheduling logic (slice 5+), not a stored field —
- *     the issue text's "snoozeCount" is loose wording; the ADR is canonical.
+ *   - `snoozeCount` and `pendingPostRebootBanner` both live on `Reminder` per
+ *     ADR 0007 Consequences ("New field `snoozeCount: number` (default 0) on
+ *     `Reminder`") and issue #7 AC #7 (the reboot-escape banner flag).
+ *     `snoozedUntil` remains a separate scheduling field beside them.
  *   - `anchor` lives on `Recurrence`, not on `Todo`.
  *   - IDs are ULID (Crockford base32, 26 chars, sortable). `ulid()` from the
  *     `ulid` package is the runtime minting function; this module only
@@ -68,6 +69,8 @@ export const ReminderSchema = z.strictObject({
   recur: RecurrenceSchema.nullable(),
   state: z.enum(["pending", "fired", "cleared", "cancelled"]),
   snoozedUntil: epochMs.nullable(),
+  snoozeCount: z.number().int().nonnegative().default(0),
+  pendingPostRebootBanner: z.boolean().default(false),
   permissionRefusedAt: epochMs.nullable(),
   recurredTo: IdSchema.nullable(),
   createdAt: epochMs,
