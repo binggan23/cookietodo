@@ -7,6 +7,7 @@ import { createDeviceStore } from "./deviceStore.js";
 import { ElectronAlarmAdapter } from "./ElectronAlarmAdapter.js";
 import { ElectronStoreAdapter } from "./ElectronStoreAdapter.js";
 import { registerDeviceAdapterIpc } from "./ipcHandlers.js";
+import { registerRebootEscape } from "./rebootEscape.js";
 import { registerSettingsAdapterIpc } from "./settingsHandlers.js";
 import { registerStoreAdapterIpc } from "./storeHandlers.js";
 
@@ -95,6 +96,11 @@ void app.whenReady().then(async () => {
   // createWindow — the SettingsView overlay's
   // `window.cookietodoSettingsAdapter()` calls fire on overlay mount.
   registerSettingsAdapterIpc();
+  // Slice-6: reboot-escape banner trigger — fires on `will-quit` +
+  // `session-end` to flag every escaped Reminder (alarm fired / past-due
+  // armed, joined to an uncompleted Todo) with `pendingPostRebootBanner`
+  // before the next launch reads it (ADR 0007 — Issue #7 AC #7-#8).
+  registerRebootEscape(`${app.getPath("userData")}/snapshot.json`);
   mainWindow = await createWindow();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
