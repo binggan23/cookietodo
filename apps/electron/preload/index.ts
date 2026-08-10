@@ -1,4 +1,8 @@
-import type { AlarmAdapter, AlarmFiredPayload } from "@cookietodo/renderer/alarm";
+import type {
+  AlarmActionPayload,
+  AlarmAdapter,
+  AlarmFiredPayload,
+} from "@cookietodo/renderer/alarm";
 import type { DeviceAdapter } from "@cookietodo/renderer/device";
 import type { Reminder, Snapshot, Todo } from "@cookietodo/renderer/domain";
 import type { StoreAdapter } from "@cookietodo/renderer/persistence";
@@ -87,12 +91,21 @@ const settingsAdapter: SettingsAdapter = {
  * pattern (an explicit named function + `removeListener` on cleanup) so the
  * store's per-instance subscription can tear down without leaking the
  * listener across store reconstructions.
+ *
+ * Slice 6 adds `dismissAlarm` / `snoozeAlarm` invoke channels plus the
+ * `onAlarmDismissed` / `onAlarmSnoozed` wrap-listeners around the
+ * `cookietodo:alarm:dismissed` / `cookietodo:alarm:snoozed` push channels
+ * (mirroring `onAlarmFired`).
  */
 const alarmAdapter: AlarmAdapter = {
   scheduleAlarm: (reminder: Reminder, todo: Todo) =>
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}scheduleAlarm`, reminder, todo) as Promise<void>,
   cancelAlarm: (reminderId: Reminder["id"]) =>
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}cancelAlarm`, reminderId) as Promise<void>,
+  dismissAlarm: (reminderId: Reminder["id"]) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}dismissAlarm`, reminderId) as Promise<void>,
+  snoozeAlarm: (reminderId: Reminder["id"]) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}snoozeAlarm`, reminderId) as Promise<void>,
   onAlarmFired: (callback: (payload: AlarmFiredPayload) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: AlarmFiredPayload): void => {
       callback(payload);
@@ -100,6 +113,24 @@ const alarmAdapter: AlarmAdapter = {
     ipcRenderer.on("cookietodo:alarm:fired", listener);
     return () => {
       ipcRenderer.removeListener("cookietodo:alarm:fired", listener);
+    };
+  },
+  onAlarmDismissed: (callback: (payload: AlarmActionPayload) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AlarmActionPayload): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("cookietodo:alarm:dismissed", listener);
+    return () => {
+      ipcRenderer.removeListener("cookietodo:alarm:dismissed", listener);
+    };
+  },
+  onAlarmSnoozed: (callback: (payload: AlarmActionPayload) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AlarmActionPayload): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("cookietodo:alarm:snoozed", listener);
+    return () => {
+      ipcRenderer.removeListener("cookietodo:alarm:snoozed", listener);
     };
   },
   requestPermission: (kind: "alarm") =>

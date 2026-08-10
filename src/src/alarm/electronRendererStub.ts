@@ -12,6 +12,11 @@
  * `"granted"` immediately. The Android / Electron shells pay the publisher
  * cost — the stub is the consumer-side no-op.
  *
+ * Slice 6 adds the password-dismiss + snooze lifecycle: `dismissAlarm` /
+ * `snoozeAlarm` record the reminderId into `dismissed` / `snoozed`;
+ * `onAlarmDismissed` / `onAlarmSnoozed` register subscribers (and, like
+ * `onAlarmFired`, never fire — the shells are the publishers).
+ *
  * The stub is intentionally exported as a single instance (mirrors the
  * slice-2 `electronRendererStub` named-export pattern); the store's
  * singleton `cookietodoStore` does NOT need to allocate a fresh stub per
@@ -19,11 +24,12 @@
  */
 
 import type { Reminder, Todo } from "../domain/types";
-import type { AlarmAdapter, AlarmFiredPayload } from "./AlarmAdapter";
+import type { AlarmActionPayload, AlarmAdapter, AlarmFiredPayload } from "./AlarmAdapter";
 
 /**
  * Returns an {@link AlarmAdapter} that records every call into the returned
- * object's `armed`, `cancelled`, `subscribers`, and `permission` arrays so
+ * object's `armed`, `cancelled`, `dismissed`, `snoozed`, `subscribers`,
+ * `dismissedSubscribers`, `snoozedSubscribers`, and `permission` arrays so
  * callers (Vitest, optional debug logging) can introspect the no-shell fallback.
  *
  * Exported as a factory (rather than a frozen singleton) so per-test Vitest
@@ -35,8 +41,16 @@ export interface ElectronAlarmStub extends AlarmAdapter {
   armed: Map<Reminder["id"], Reminder>;
   /** reminderIds that have been cancelled (cleared from `armed`). */
   cancelled: Reminder["id"][];
+  /** reminderIds that were password-dismissed (slice 6). */
+  dismissed: Reminder["id"][];
+  /** reminderIds that were snoozed (slice 6). */
+  snoozed: Reminder["id"][];
   /** Subscribers registered via `onAlarmFired`. */
   subscribers: Array<(payload: AlarmFiredPayload) => void>;
+  /** Subscribers registered via `onAlarmDismissed`. */
+  dismissedSubscribers: Array<(payload: AlarmActionPayload) => void>;
+  /** Subscribers registered via `onAlarmSnoozed`. */
+  snoozedSubscribers: Array<(payload: AlarmActionPayload) => void>;
   /** Recorded `requestPermission` calls. */
   permission: PermissionKindLog[];
 }
@@ -49,13 +63,21 @@ interface PermissionKindLog {
 export function createElectronAlarmStub(): ElectronAlarmStub {
   const armed = new Map<Reminder["id"], Reminder>();
   const cancelled: Reminder["id"][] = [];
+  const dismissed: Reminder["id"][] = [];
+  const snoozed: Reminder["id"][] = [];
   const subscribers: Array<(payload: AlarmFiredPayload) => void> = [];
+  const dismissedSubscribers: Array<(payload: AlarmActionPayload) => void> = [];
+  const snoozedSubscribers: Array<(payload: AlarmActionPayload) => void> = [];
   const permission: PermissionKindLog[] = [];
 
   return {
     armed,
     cancelled,
+    dismissed,
+    snoozed,
     subscribers,
+    dismissedSubscribers,
+    snoozedSubscribers,
     permission,
     async scheduleAlarm(reminder: Reminder, _todo: Todo): Promise<void> {
       // Idempotent on id — re-schedule overwrites the previous record keeping
@@ -74,6 +96,30 @@ export function createElectronAlarmStub(): ElectronAlarmStub {
         const idx = subscribers.indexOf(callback);
         if (idx !== -1) {
           subscribers.splice(idx, 1);
+        }
+      };
+    },
+    async dismissAlarm(reminderId: Reminder["id"]): Promise<void> {
+      dismissed.push(reminderId);
+    },
+    async snoozeAlarm(reminderId: Reminder["id"]): Promise<void> {
+      snoozed.push(reminderId);
+    },
+    onAlarmDismissed(callback: (payload: AlarmActionPayload) => void): () => void {
+      dismissedSubscribers.push(callback);
+      return () => {
+        const idx = dismissedSubscribers.indexOf(callback);
+        if (idx !== -1) {
+          dismissedSubscribers.splice(idx, 1);
+        }
+      };
+    },
+    onAlarmSnoozed(callback: (payload: AlarmActionPayload) => void): () => void {
+      snoozedSubscribers.push(callback);
+      return () => {
+        const idx = snoozedSubscribers.indexOf(callback);
+        if (idx !== -1) {
+          snoozedSubscribers.splice(idx, 1);
         }
       };
     },

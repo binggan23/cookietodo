@@ -32,17 +32,36 @@ const settingsAdapter = {
 
 // Slice-5 AlarmAdapter proxy — same shape as the TS preload (index.ts), kept
 // in lockstep. onAlarmFired wraps an ipcRenderer.on listener and returns an
-// unsubscribe.
+// unsubscribe. Slice 6 adds dismissAlarm / snoozeAlarm invoke channels plus
+// the onAlarmDismissed / onAlarmSnoozed wrap-listeners.
 const alarmAdapter = {
   scheduleAlarm: (reminder, todo) =>
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}scheduleAlarm`, reminder, todo),
   cancelAlarm: (reminderId) =>
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}cancelAlarm`, reminderId),
+  dismissAlarm: (reminderId) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}dismissAlarm`, reminderId),
+  snoozeAlarm: (reminderId) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}snoozeAlarm`, reminderId),
   onAlarmFired: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("cookietodo:alarm:fired", listener);
     return () => {
       ipcRenderer.removeListener("cookietodo:alarm:fired", listener);
+    };
+  },
+  onAlarmDismissed: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("cookietodo:alarm:dismissed", listener);
+    return () => {
+      ipcRenderer.removeListener("cookietodo:alarm:dismissed", listener);
+    };
+  },
+  onAlarmSnoozed: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("cookietodo:alarm:snoozed", listener);
+    return () => {
+      ipcRenderer.removeListener("cookietodo:alarm:snoozed", listener);
     };
   },
   requestPermission: (kind) =>

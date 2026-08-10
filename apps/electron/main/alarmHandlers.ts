@@ -9,7 +9,9 @@
  * The `cookietodo:alarm:fired` channel is a MAIN→RENDERER push (not a handle):
  * `ElectronAlarmAdapter.fire()` calls `mainWindow.webContents.send(...)`, and
  * the preload's `onAlarmFired(cb)` wraps an `ipcRenderer.on` listener around
- * it (wrap-listener returning an unsubscribe).
+ * it (wrap-listener returning an unsubscribe). Slice 6 adds the two same-shaped
+ * push channels `cookietodo:alarm:dismissed` / `cookietodo:alarm:snoozed`
+ * (password-dismiss + snooze events, carrying the lighter `AlarmActionPayload`).
  *
  * Connector: `apps/electron/main/index.ts` calls
  * `registerAlarmAdapterIpc(new ElectronAlarmAdapter(getMainWindow))` AFTER
@@ -27,12 +29,14 @@ import { ipcMain } from "electron";
 
 const CHANNEL_PREFIX = "cookietodo:alarm:";
 
-function channelFor(method: "scheduleAlarm" | "cancelAlarm" | "requestPermission"): string {
+function channelFor(
+  method: "scheduleAlarm" | "cancelAlarm" | "requestPermission" | "dismissAlarm" | "snoozeAlarm",
+): string {
   return `${CHANNEL_PREFIX}${method}`;
 }
 
 /**
- * Register the 3 renderer-callable `ipcMain.handle` channels for the given
+ * Register the 5 renderer-callable `ipcMain.handle` channels for the given
  * {@link AlarmAdapter}. `event` is the standard Electron invoke event; unused
  * (the handlers neither depend on sender nor return frame — same shape as
  * slice-2 {@link registerDeviceAdapterIpc}).
@@ -46,5 +50,11 @@ export function registerAlarmAdapterIpc(adapter: AlarmAdapter): void {
   });
   ipcMain.handle(channelFor("requestPermission"), async (_event, kind: "alarm") => {
     return adapter.requestPermission(kind);
+  });
+  ipcMain.handle(channelFor("dismissAlarm"), async (_event, reminderId: Reminder["id"]) => {
+    await adapter.dismissAlarm(reminderId);
+  });
+  ipcMain.handle(channelFor("snoozeAlarm"), async (_event, reminderId: Reminder["id"]) => {
+    await adapter.snoozeAlarm(reminderId);
   });
 }

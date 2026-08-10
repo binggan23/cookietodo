@@ -34,7 +34,11 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AlarmAdapter, AlarmFiredPayload } from "@cookietodo/renderer/alarm";
+import type {
+  AlarmActionPayload,
+  AlarmAdapter,
+  AlarmFiredPayload,
+} from "@cookietodo/renderer/alarm";
 import type { Reminder, Todo } from "@cookietodo/renderer/domain";
 import { BrowserWindow, type WebContents } from "electron";
 import { resolveAlarmSoundUrl } from "./assetPath.js";
@@ -79,12 +83,16 @@ const ALARM_WINDOW_OPTS = {
 export type MainWindowAccessor = () => WebContents | null;
 
 type FiredCallback = (payload: AlarmFiredPayload) => void;
+type AlarmActionCallback = (payload: AlarmActionPayload) => void;
 
 export class ElectronAlarmAdapter implements AlarmAdapter {
   private readonly timers = new Map<Reminder["id"], NodeJS.Timeout>();
   private readonly windows = new Map<Reminder["id"], BrowserWindow>();
   private readonly titles = new Map<Reminder["id"], string>();
+  private readonly todoIds = new Map<Reminder["id"], Todo["id"]>();
   private readonly firedCallbacks: FiredCallback[] = [];
+  private readonly dismissedCallbacks: AlarmActionCallback[] = [];
+  private readonly snoozedCallbacks: AlarmActionCallback[] = [];
   /** Slice 5 hardcodes tone #1 — UI for selecting lands in a later slice. */
   private readonly soundId = 1;
   private readonly mainWindowRef: MainWindowAccessor;
@@ -98,6 +106,7 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     // prior timer (matches the store's cancel-then-schedule flow).
     this.clearTimer(reminder.id);
     this.titles.set(reminder.id, todo.title);
+    this.todoIds.set(reminder.id, todo.id);
     const delay = Math.max(0, reminder.triggerAt - Date.now());
     const timer = setTimeout(() => void this.fire(reminder), delay);
     // unref() so a leftover timer does not hold the main process open if the
@@ -109,11 +118,38 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
   async cancelAlarm(reminderId: Reminder["id"]): Promise<void> {
     this.clearTimer(reminderId);
     this.titles.delete(reminderId);
-    const win = this.windows.get(reminderId);
-    if (win !== undefined && !win.isDestroyed()) {
-      win.close();
+    this.todoIds.delete(reminderId);
+    this.closeAlarmWindow(reminderId);
+  }
+
+  async dismissAlarm(reminderId: Reminder["id"]): Promise<void> {
+    this.clearTimer(reminderId);
+    this.titles.delete(reminderId);
+    this.todoIds.delete(reminderId);
+    this.closeAlarmWindow(reminderId);
+    const payload: AlarmActionPayload = { reminderId };
+    const mainWC = this.mainWindowRef();
+    if (mainWC !== null) {
+      mainWC.send("cookietodo:alarm:dismissed", payload);
     }
-    this.windows.delete(reminderId);
+    for (const cb of this.dismissedCallbacks) {
+      cb(payload);
+    }
+  }
+
+  async snoozeAlarm(reminderId: Reminder["id"]): Promise<void> {
+    this.clearTimer(reminderId);
+    this.titles.delete(reminderId);
+    this.todoIds.delete(reminderId);
+    this.closeAlarmWindow(reminderId);
+    const payload: AlarmActionPayload = { reminderId };
+    const mainWC = this.mainWindowRef();
+    if (mainWC !== null) {
+      mainWC.send("cookietodo:alarm:snoozed", payload);
+    }
+    for (const cb of this.snoozedCallbacks) {
+      cb(payload);
+    }
   }
 
   onAlarmFired(callback: FiredCallback): () => void {
@@ -122,6 +158,26 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
       const idx = this.firedCallbacks.indexOf(callback);
       if (idx !== -1) {
         this.firedCallbacks.splice(idx, 1);
+      }
+    };
+  }
+
+  onAlarmDismissed(callback: AlarmActionCallback): () => void {
+    this.dismissedCallbacks.push(callback);
+    return () => {
+      const idx = this.dismissedCallbacks.indexOf(callback);
+      if (idx !== -1) {
+        this.dismissedCallbacks.splice(idx, 1);
+      }
+    };
+  }
+
+  onAlarmSnoozed(callback: AlarmActionCallback): () => void {
+    this.snoozedCallbacks.push(callback);
+    return () => {
+      const idx = this.snoozedCallbacks.indexOf(callback);
+      if (idx !== -1) {
+        this.snoozedCallbacks.splice(idx, 1);
       }
     };
   }
@@ -138,6 +194,14 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     this.timers.delete(reminderId);
   }
 
+  private closeAlarmWindow(reminderId: Reminder["id"]): void {
+    const win = this.windows.get(reminderId);
+    if (win !== undefined && !win.isDestroyed()) {
+      win.close();
+    }
+    this.windows.delete(reminderId);
+  }
+
   private async fire(reminder: Reminder): Promise<void> {
     const soundUrl = resolveAlarmSoundUrl(this.soundId);
     const hashParams = new URLSearchParams({
@@ -146,6 +210,7 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
       soundUrl,
       soundId: String(this.soundId),
       todoTitle: this.titles.get(reminder.id) ?? "",
+      snoozeCount: String(reminder.snoozeCount ?? 0),
     });
     const hash = `#/alarm?${hashParams.toString()}`;
 

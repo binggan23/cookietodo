@@ -13,11 +13,18 @@
  *     preview when no preload is present (mirrors the slice-2 `electronRendererStub`
  *     pattern and the slice-3 `MemoryStoreAdapter`).
  *
- * Slice 5 scope (this file): the interface is shell-agnostic. Desktop returns
+ * Slice 6 scope (this file): the interface is shell-agnostic. Desktop returns
  * `"granted"` for `requestPermission` (alarm notifications always allowed in
  * Electron main). The Android signature is reserved; `PermissionKind` is
  * `'alarm'` only in slice 5 (the Android plugin extends `PermissionKind` in
  * slice 10).
+ *
+ * Slice 6 adds the password-dismiss + snooze lifecycle (ADR 0007 Decision A
+ * + Decision C): `dismissAlarm` / `snoozeAlarm` close the Alarm Event from
+ * the shell and push the lighter {@link AlarmActionPayload} to the renderer
+ * (`cookietodo:alarm:dismissed` / `cookietodo:alarm:snoozed`); the
+ * `onAlarmDismissed` / `onAlarmSnoozed` wrap-listeners mirror the
+ * {@link AlarmAdapter.onAlarmFired} subscription contract.
  *
  * Every method is async because the desktop backend goes through `ipcMain.handle`
  * (renderer `ipcRenderer.invoke` through the preload proxy) and the Android
@@ -46,6 +53,17 @@ export interface AlarmFiredPayload {
   reminderId: Reminder["id"];
   /** The owning Todo's id (forwarded for the renderer store to locate state). */
   todoId: Todo["id"];
+}
+
+/**
+ * Payload pushed from shell → renderer when the user password-dismisses or
+ * snoozes an open Alarm Event (slice 6). Lighter than {@link AlarmFiredPayload}
+ * — no `todoId`: the renderer store locates the owning Todo via the Reminder's
+ * `todoId`, so the shell only needs to identify the Reminder.
+ */
+export interface AlarmActionPayload {
+  /** The Reminder the user acted on (dismissed / snoozed). */
+  reminderId: Reminder["id"];
 }
 
 /**
@@ -112,6 +130,37 @@ export interface AlarmAdapter {
    * each `createCookietodoStore` factory call subscribes once).
    */
   onAlarmFired(callback: (payload: AlarmFiredPayload) => void): () => void;
+  /**
+   * Password-dismiss the Alarm Event for `reminderId` (ADR 0007 Decision A —
+   * the correct 6-digit password path). The shell closes the Alarm Event
+   * window and pushes a `cookietodo:alarm:dismissed` event with the
+   * `{ reminderId }` payload to the main window's renderer store, then invokes
+   * the registered {@link onAlarmDismissed} callbacks. Safe call on unknown /
+   * already-dismissed ids (no-op, NOT a hard failure).
+   */
+  dismissAlarm(reminderId: Reminder["id"]): Promise<void>;
+  /**
+   * Snooze the Alarm Event for `reminderId` (ADR 0007 Decision A — the
+   * no-password path) by the configured snooze interval (see
+   * {@link ../snoozeConfig}). Same lifecycle shape as {@link dismissAlarm}:
+   * closes the Alarm Event window and pushes a `cookietodo:alarm:snoozed`
+   * event. Safe call on unknown / already-dismissed ids (no-op).
+   */
+  snoozeAlarm(reminderId: Reminder["id"]): Promise<void>;
+  /**
+   * Subscribe to password-dismiss events pushed from the shell to the
+   * renderer. Each dismiss produces one {@link AlarmActionPayload}. Returns
+   * an `unsubscribe` that detaches the callback — same wrap-listener contract
+   * as {@link onAlarmFired}.
+   */
+  onAlarmDismissed(callback: (payload: AlarmActionPayload) => void): () => void;
+  /**
+   * Subscribe to snooze events pushed from the shell to the renderer. Each
+   * snooze produces one {@link AlarmActionPayload}. Returns an `unsubscribe`
+   * that detaches the callback — same wrap-listener contract as
+   * {@link onAlarmFired}.
+   */
+  onAlarmSnoozed(callback: (payload: AlarmActionPayload) => void): () => void;
   /**
    * Request the OS-level permission needed by the Alarm Event. On desktop
    * this resolves `"granted"` immediately (alarm + notification + foreground
