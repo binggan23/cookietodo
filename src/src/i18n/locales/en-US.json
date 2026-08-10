@@ -53,8 +53,14 @@
   },
   "alarm": {
     "event-title": "Alarm",
-    "event-dismiss": "Dismiss",
-    "event-subtitle": "Task: "
+    "event-subtitle": "Task: ",
+    "event-snooze": "Snooze",
+    "event-password-label": "Enter your 6-digit password to dismiss",
+    "event-wrong-password": "Wrong password, please try again",
+    "bypass": {
+      "banner": "You skipped the alarm — {{title}} was not dismissed, still marked as pending",
+      "dismiss": "Dismiss"
+    }
   },
   "list": {
     "form-title-create": "New List",
