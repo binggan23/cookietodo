@@ -11,7 +11,7 @@
  */
 import { useStore } from "zustand";
 import type { AlarmAdapter } from "../alarm/AlarmAdapter";
-import type { List, Snapshot, Todo, Tombstone } from "../domain/types";
+import type { List, Reminder, Snapshot, Todo, Tombstone } from "../domain/types";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
 import {
   type CookietodoStoreState,
@@ -23,7 +23,7 @@ import {
   type TodoPatch,
 } from "./store";
 
-export type { List, Snapshot, Todo, Tombstone } from "../domain/types";
+export type { List, Reminder, Snapshot, Todo, Tombstone } from "../domain/types";
 // Re-export the public store surface + input types so the UI imports one module.
 export {
   type CookietodoStoreState,
@@ -73,6 +73,10 @@ export function useTodos(): Todo[] {
   return useStore(cookietodoStore, (s) => s.snapshot.todos);
 }
 
+export function useReminders(): Reminder[] {
+  return useStore(cookietodoStore, (s) => s.snapshot.reminders);
+}
+
 export function useLists(): List[] {
   return useStore(cookietodoStore, (s) => s.snapshot.lists);
 }
@@ -107,6 +111,10 @@ export function useLoad(): () => Promise<void> {
 
 export function useReplaceSnapshot(): (snapshot: Snapshot) => void {
   return useStore(cookietodoStore, (s) => s.replaceSnapshot);
+}
+
+export function useClearRebootBanner(): (id: Reminder["id"]) => void {
+  return useStore(cookietodoStore, (s) => s.clearRebootBanner);
 }
 
 export function useCreateTodo(): (input: TodoInput) => Todo {

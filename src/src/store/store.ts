@@ -43,8 +43,9 @@
 import { ulid } from "ulid";
 import * as z from "zod";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { AlarmAdapter, AlarmFiredPayload } from "../alarm/AlarmAdapter";
+import type { AlarmActionPayload, AlarmAdapter, AlarmFiredPayload } from "../alarm/AlarmAdapter";
 import { electronAlarmStub } from "../alarm/electronRendererStub";
+import { MAX_SNOOZES, SNOOZE_INTERVAL_MS } from "../alarm/snoozeConfig";
 import {
   epochMs,
   HEX_COLOR_RE,
@@ -186,6 +187,8 @@ export interface CookietodoStoreApi {
   createList(input: ListInput): List;
   updateList(id: List["id"], patch: ListPatch): void;
   deleteList(id: List["id"]): void;
+  /** Slice 6 — dismiss the fired post-reboot banner for a Reminder (issue AC #8). */
+  clearRebootBanner(reminderId: Reminder["id"]): void;
 }
 
 /** Full state returned by `getState()` — the data the UI subscribes to. */
@@ -308,6 +311,31 @@ export function createCookietodoStore(
       }
     };
 
+    /**
+     * Slice 6 — completion clears the reminder (ADR 0007 C-extension): manual
+     * "mark complete" is the offline equivalent of password-dismiss, so the
+     * owning Reminder advances `pending`/`fired` → `cleared` in the same
+     * mutation. Terminal states (`cleared`/`cancelled`) pass through unchanged
+     * (monotonic — never regress; issue AC #9 un-complete-then-resolve keeps
+     * the cleared reminder terminal).
+     */
+    const clearReminderOnCompletion = (
+      reminders: Reminder[],
+      todoId: Todo["id"],
+      now: number,
+    ): Reminder[] =>
+      reminders.map((r) =>
+        r.todoId === todoId && (r.state === "pending" || r.state === "fired")
+          ? ReminderSchema.parse({
+              ...r,
+              state: "cleared",
+              pendingPostRebootBanner: false,
+              updatedAt: now,
+              revision: r.revision + 1,
+            })
+          : r,
+      );
+
     // Per-instance subscription — DEFINES the contract a Vitest store
     // exercises when it asserts `subscribers.length === 1`. When the shell
     // pushes a fire event, locate the Reminder we own and flip its state.
@@ -316,6 +344,116 @@ export function createCookietodoStore(
     // was constructed with.
     void alarmAdapter.onAlarmFired((payload: AlarmFiredPayload) => {
       updateReminder(payload.reminderId, { state: "fired" });
+    });
+
+    // Slice 6 — password-dismiss (ADR 0007 Decision A). The shell closed the
+    // Alarm Event after a correct 6-digit password; the store advances the
+    // Reminder `fired` → `cleared` AND the owning Todo → completed in ONE
+    // set + persist (the AC "one atomic transaction" — the persisted snapshot
+    // image carries both changes together).
+    void alarmAdapter.onAlarmDismissed((payload: AlarmActionPayload) => {
+      const state = get();
+      const reminder = state.snapshot.reminders.find((r) => r.id === payload.reminderId);
+      if (reminder === undefined) {
+        set({ error: `dismissAlarm: no Reminder with id "${payload.reminderId}"` });
+        return;
+      }
+      // Monotonic guard — never regress a terminal state (a second dismiss or
+      // a dismiss after a delete/cancel is a clean no-op, not an error path).
+      if (reminder.state === "cleared" || reminder.state === "cancelled") {
+        return;
+      }
+      const todo = state.snapshot.todos.find((t) => t.id === reminder.todoId);
+      if (todo === undefined) {
+        set({
+          error: `dismissAlarm: no Todo for Reminder with id "${payload.reminderId}"`,
+        });
+        return;
+      }
+      try {
+        const now = Date.now();
+        const dismissedReminder = ReminderSchema.parse({
+          ...reminder,
+          state: "cleared",
+          pendingPostRebootBanner: false,
+          updatedAt: now,
+          revision: reminder.revision + 1,
+        });
+        const completedTodo = TodoSchema.parse({
+          ...todo,
+          completed: true,
+          completedAt: now,
+          updatedAt: now,
+          revision: todo.revision + 1,
+        });
+        set({
+          snapshot: {
+            ...state.snapshot,
+            reminders: state.snapshot.reminders.map((r) =>
+              r.id === dismissedReminder.id ? dismissedReminder : r,
+            ),
+            todos: state.snapshot.todos.map((t) => (t.id === completedTodo.id ? completedTodo : t)),
+          },
+          error: null,
+        });
+        persist();
+      } catch (err) {
+        set({ error: err instanceof z.ZodError ? err.message : String(err) });
+      }
+    });
+
+    // Slice 6 — snooze (ADR 0007 Decision C): the no-password path. Reset the
+    // Reminder `fired` → `pending` at `now + SNOOZE_INTERVAL_MS`, bump
+    // `snoozeCount`, then cancel-then-schedule so the timer re-arms at the new
+    // `triggerAt`. `scheduleIfArmed` only schedules `state === 'pending'`, so
+    // the re-arm fires at the new time.
+    void alarmAdapter.onAlarmSnoozed((payload: AlarmActionPayload) => {
+      const state = get();
+      const reminder = state.snapshot.reminders.find((r) => r.id === payload.reminderId);
+      if (reminder === undefined) {
+        set({ error: `snoozeAlarm: no Reminder with id "${payload.reminderId}"` });
+        return;
+      }
+      const todo = state.snapshot.todos.find((t) => t.id === reminder.todoId);
+      if (todo === undefined) {
+        set({
+          error: `snoozeAlarm: no Todo for Reminder with id "${payload.reminderId}"`,
+        });
+        return;
+      }
+      if (reminder.snoozeCount >= MAX_SNOOZES) {
+        // Store-side guard for issue AC #6 — after the 3rd snooze the shell
+        // drops the Snooze button; never mutate or re-arm past the cap.
+        set({ error: "snoozeAlarm: snooze limit reached (MAX_SNOOZES)" });
+        return;
+      }
+      try {
+        const now = Date.now();
+        const snoozedUntil = now + SNOOZE_INTERVAL_MS;
+        const updatedReminder = ReminderSchema.parse({
+          ...reminder,
+          state: "pending",
+          snoozedUntil,
+          triggerAt: snoozedUntil,
+          snoozeCount: reminder.snoozeCount + 1,
+          updatedAt: now,
+          revision: reminder.revision + 1,
+        });
+        set({
+          snapshot: {
+            ...state.snapshot,
+            reminders: state.snapshot.reminders.map((r) =>
+              r.id === updatedReminder.id ? updatedReminder : r,
+            ),
+          },
+          error: null,
+        });
+        persist();
+        cancelIfArmed(reminder.id);
+        scheduleIfArmed(updatedReminder, todo);
+      } catch (err) {
+        set({ error: err instanceof z.ZodError ? err.message : String(err) });
+      }
     });
 
     return {
@@ -340,6 +478,45 @@ export function createCookietodoStore(
         try {
           const validated = SnapshotSchema.parse(snapshot);
           set({ snapshot: validated, loaded: true, error: null });
+          persist();
+        } catch (err) {
+          set({ error: err instanceof z.ZodError ? err.message : String(err) });
+        }
+      },
+
+      clearRebootBanner(reminderId: Reminder["id"]): void {
+        const state = get();
+        const reminder = state.snapshot.reminders.find((r) => r.id === reminderId);
+        if (reminder === undefined) {
+          set({ error: `clearRebootBanner: no Reminder with id "${reminderId}"` });
+          return;
+        }
+        // Banner-dismissible iff flagged AND escaped-via-reboot per the
+        // canonical `markRebootEscapes` matcher shape (drift-guard contract
+        // with `src/persistence/markRebootEscapes.ts` + HomeView's filter): a
+        // `fired` Reminder or a `pending` Reminder past its `triggerAt`. The
+        // prior `state !== "fired"` guard silently no-op'd the past-due
+        // pending branch exposed by issue #7's reboot-while-armed path.
+        const now = Date.now();
+        const escaped =
+          reminder.state === "fired" || (reminder.state === "pending" && reminder.triggerAt <= now);
+        if (!escaped || reminder.pendingPostRebootBanner !== true) {
+          return; // no-op — nothing to dismiss.
+        }
+        try {
+          const updated = ReminderSchema.parse({
+            ...reminder,
+            pendingPostRebootBanner: false,
+            updatedAt: now,
+            revision: reminder.revision + 1,
+          });
+          set({
+            snapshot: {
+              ...state.snapshot,
+              reminders: state.snapshot.reminders.map((r) => (r.id === reminderId ? updated : r)),
+            },
+            error: null,
+          });
           persist();
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
@@ -373,6 +550,8 @@ export function createCookietodoStore(
               recur: null, // slice 5 floor — recurrence scheduling lands in slice 9.
               state: "pending",
               snoozedUntil: null,
+              snoozeCount: 0,
+              pendingPostRebootBanner: false,
               permissionRefusedAt: null,
               recurredTo: null,
               createdAt: now,
@@ -436,6 +615,16 @@ export function createCookietodoStore(
           const newReminderId = updated.reminderId;
           let newReminderForSchedule: Reminder | null = null;
 
+          // Slice 6 — completing the Todo is the offline password-dismiss
+          // equivalent (ADR 0007 C-extension). Runs BEFORE the retirement /
+          // re-arm branches so a cleared Reminder carries `state: 'cleared'`
+          // into `newReminderForSchedule` and `scheduleIfArmed` (pending-only)
+          // refuses to re-arm it — no alarm re-fire after manual completion.
+          if (patch.completed === true) {
+            cancelIfArmed(newReminderId);
+            reminders = clearReminderOnCompletion(reminders, id, Date.now());
+          }
+
           if (oldReminderId !== null && oldReminderId !== newReminderId) {
             // Reminder retired: cancel the timer, transition entity to 'cancelled'
             // (ADR 0006 — `cancelled` is terminal and survived for slice 7's
@@ -469,6 +658,8 @@ export function createCookietodoStore(
               recur: null,
               state: "pending",
               snoozedUntil: null,
+              snoozeCount: 0,
+              pendingPostRebootBanner: false,
               permissionRefusedAt: null,
               recurredTo: null,
               createdAt: now,
@@ -585,8 +776,15 @@ export function createCookietodoStore(
             updatedAt: now,
             revision: existing.revision + 1,
           });
+          let reminders = state.snapshot.reminders;
+          if (completed && existing.reminderId !== null) {
+            // ADR 0007 C-extension: completing = offline password-dismiss —
+            // cancel the timer and clear the Reminder in the same mutation.
+            cancelIfArmed(existing.reminderId);
+            reminders = clearReminderOnCompletion(reminders, id, now);
+          }
           const todos = state.snapshot.todos.map((t, i) => (i === idx ? updated : t));
-          set({ snapshot: { ...state.snapshot, todos }, error: null });
+          set({ snapshot: { ...state.snapshot, todos, reminders }, error: null });
           persist();
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
@@ -804,6 +1002,10 @@ const lazyAlarmAdapter: AlarmAdapter = {
   cancelAlarm: (reminderId) => resolveAlarmAdapter().cancelAlarm(reminderId),
   onAlarmFired: (cb) => resolveAlarmAdapter().onAlarmFired(cb),
   requestPermission: (kind) => resolveAlarmAdapter().requestPermission(kind),
+  dismissAlarm: (reminderId) => resolveAlarmAdapter().dismissAlarm(reminderId),
+  snoozeAlarm: (reminderId) => resolveAlarmAdapter().snoozeAlarm(reminderId),
+  onAlarmDismissed: (cb) => resolveAlarmAdapter().onAlarmDismissed(cb),
+  onAlarmSnoozed: (cb) => resolveAlarmAdapter().onAlarmSnoozed(cb),
 };
 
 export const cookietodoStore: StoreApi<CookietodoStoreState> = createCookietodoStore(
