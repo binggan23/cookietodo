@@ -20,6 +20,7 @@ interface AlarmRouteParams {
   reminderId: string;
   todoTitle: string;
   soundUrl: string;
+  snoozeCount: number;
 }
 
 /**
@@ -34,10 +35,16 @@ function parseAlarmHash(hash: string): AlarmRouteParams | null {
   const reminderId = params.get("reminderId");
   const soundUrl = params.get("soundUrl");
   if (reminderId === null || soundUrl === null || soundUrl === "") return null;
+  const rawSnoozeCount = params.get("snoozeCount");
+  const snoozeCount =
+    rawSnoozeCount !== null && /^\d+$/.test(rawSnoozeCount)
+      ? Number.parseInt(rawSnoozeCount, 10)
+      : 0;
   return {
     reminderId,
     todoTitle: params.get("todoTitle") ?? "",
     soundUrl,
+    snoozeCount,
   };
 }
 
@@ -55,6 +62,7 @@ createRoot(rootEl).render(
         reminderId={alarmRoute.reminderId}
         todoTitle={alarmRoute.todoTitle}
         soundUrl={alarmRoute.soundUrl}
+        snoozeCount={alarmRoute.snoozeCount}
       />
     ) : (
       <App />
