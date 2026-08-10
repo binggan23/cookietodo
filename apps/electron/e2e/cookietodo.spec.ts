@@ -74,6 +74,30 @@ async function typePasswordSlots(page: Page, code: string): Promise<void> {
   }
 }
 
+/**
+ * Same as {@link typePasswordSlots} but tolerates a "Target page ... has been
+ * closed" thrown by the trailing keypress — which is the expected outcome
+ * when the 6th digit triggers `dismissAlarm` and the shell closes the alarm
+ * window mid-press. Mirrors slice-5's dismiss-click `.catch(() => {})` pattern.
+ */
+async function typePasswordSlotsTolerant(page: Page, code: string): Promise<void> {
+  await page.getByTestId("password-slot-0").click();
+  for (let i = 0; i < code.length; i += 1) {
+    const slot = page.getByTestId(`password-slot-${i}`);
+    try {
+      await expect(slot).toBeVisible({ timeout: 1_000 });
+      await slot.press(code[i] ?? "");
+    } catch (err) {
+      // The 6th digit triggers dismissAlarm (IPC), which tears down the page.
+      // The "Target page has been closed" / locator-not-found here is the
+      // expected outcome once the close is in flight — break the loop, since
+      // the closePromise is armed in the caller.
+      void err;
+      return;
+    }
+  }
+}
+
 async function clickEnabledContinue(page: Page): Promise<void> {
   const button = page.getByRole("button", { name: "继续" });
   await expect(button).toBeEnabled();
@@ -581,32 +605,24 @@ function liveWindowCount(app: ElectronApplication): number {
   return app.windows().filter((w) => !w.isClosed() && !w.url().startsWith("devtools://")).length;
 }
 
-test("slice-5: alarm fires at dueAt, fullscreen Dismiss closes alarm window", async () => {
+test("slice-6: 6-digit password dismisses alarm window atomically completes the Todo", async () => {
+  test.setTimeout(120_000); // boundary wait (up to 60s) + 6-digit paint
   const userDataDir = await freshUserDataDir();
   const app = await launchCookietodo(userDataDir);
   const page = await app.firstWindow();
   await driveFirstLaunchToHome(page);
 
-  // Create a Todo with dueAt at the next minute boundary + reminder ON.
   await page.getByTestId("home.create-todo").click();
   await expect(page.getByTestId("todo-form")).toBeVisible();
-  await page.getByTestId("todo-form.title").fill("Wake me");
+  await page.getByTestId("todo-form.title").fill("Slice6 wake");
   const dueAtLocal = nextMinuteLocalInput();
   await page.getByTestId("todo-form.due-at").fill(dueAtLocal);
-  // AC #1: the reminder toggle is ENABLED once dueAt is non-null.
   await expect(page.getByTestId("todo-form.reminder-toggle")).toBeEnabled();
   await page.getByTestId("todo-form.reminder-toggle").check();
-  // AC #4: triggerAt auto-fills to the dueAt value.
   await expect(page.getByTestId("todo-form.reminder-trigger-at")).toHaveValue(dueAtLocal);
   await page.getByTestId("todo-form.save").click();
-  await expect(page.getByTestId("todo-item.Wake me.completed")).toBeVisible();
+  await expect(page.getByTestId("todo-item.Slice6 wake.completed")).toBeVisible();
 
-  // Wait for the alarm window to open. The triggerAt is the next minute
-  // boundary (0–60s out), and the main-process `setTimeout` fires it exactly
-  // on time — so the wait can span up to ~60s. The alarm window may also
-  // ALREADY be open (if the boundary passed between form fill and save, the
-  // delay clamps to 0 and fires immediately) — check existing windows before
-  // registering the event listener to avoid a race with the fire.
   const alreadyOpen = app.windows().find((w) => w.url().includes("/alarm"));
   const alarmWindow =
     alreadyOpen ??
@@ -615,28 +631,155 @@ test("slice-5: alarm fires at dueAt, fullscreen Dismiss closes alarm window", as
       timeout: 90_000,
     }));
   await alarmWindow.waitForLoadState("domcontentloaded");
-
-  // Two windows open now: main + fullscreen alarm (DevTools excluded).
   await expect.poll(() => liveWindowCount(app), { timeout: 10_000 }).toBe(2);
 
-  // Alarm window shows the todo title (AC #5 bare-bones UI).
   await expect(alarmWindow.getByTestId("alarm-event")).toBeVisible();
-  await expect(alarmWindow.getByTestId("alarm-event.todo-title")).toHaveText("Wake me");
+  await expect(alarmWindow.getByTestId("alarm-event.todo-title")).toHaveText("Slice6 wake");
 
-  // Tap Dismiss — the placeholder closes the window (AC #5). The window
-  // closes synchronously through the main-process `cancelAlarm` (the click's
-  // IPC round-trip). Playwright's `click()` throws "Target page ... has been
-  // closed" when the click action itself tears down the page mid-gesture —
-  // that IS the expected outcome here, so the click error is swallowed and
-  // the close event is asserted directly on the alarm page.
-  const closePromise = alarmWindow.waitForEvent("close", { timeout: 10_000 });
-  await alarmWindow
-    .getByTestId("alarm-event.dismiss")
-    .click()
-    .catch(() => {
-      // Expected: the Dismiss click closed the page before the action completed.
-    });
+  // Correct password — testid payload uses `password-slot-{i}` for the
+  // shared `PasswordInput` component (the same surface slice-2's
+  // first-launch uses; that `typePasswordSlots` helper applies verbatim).
+  // The 6th keypress triggers `dismissAlarm` (an IPC round-trip that the
+  // shell closes the alarm window over); Playwright's `press` may observe
+  // the page closing mid-gesture, so the closePromise is armed BEFORE the
+  // password is typed and any "Target page has been closed" thrown by the
+  // trailing keypress is swallowed — exactly mirroring slice-5's Pre-slice-6
+  // dismiss-click race pattern.
+  const closePromise = alarmWindow.waitForEvent("close", { timeout: 15_000 });
+  await typePasswordSlotsTolerant(alarmWindow, TEST_PASSWORD);
   await closePromise;
+
+  await expect.poll(() => liveWindowCount(app), { timeout: 10_000 }).toBe(1);
+
+  // Atomic dismiss-as-complete (Issue #7 AC #1-#3): Todo row transitioned
+  // to completed and shows the "un-complete" affordance (`取消完成` zh-CN).
+  await expect(page.getByTestId("todo-item.Slice6 wake.complete")).toHaveText("取消完成");
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+});
+
+test("slice-6: wrong password keeps alarm window open; correct code then dismisses", async () => {
+  test.setTimeout(120_000); // boundary wait (up to 60s) + 6-digit paint twice
+  const userDataDir = await freshUserDataDir();
+  const app = await launchCookietodo(userDataDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  await page.getByTestId("home.create-todo").click();
+  await expect(page.getByTestId("todo-form")).toBeVisible();
+  await page.getByTestId("todo-form.title").fill("Slice6 wrong pw");
+  const dueAtLocal = nextMinuteLocalInput();
+  await page.getByTestId("todo-form.due-at").fill(dueAtLocal);
+  await expect(page.getByTestId("todo-form.reminder-toggle")).toBeEnabled();
+  await page.getByTestId("todo-form.reminder-toggle").check();
+  await page.getByTestId("todo-form.save").click();
+
+  const alarmWindow =
+    app.windows().find((w) => w.url().includes("/alarm")) ??
+    (await app.waitForEvent("window", {
+      predicate: (w) => w.url().includes("/alarm"),
+      timeout: 90_000,
+    }));
+  await alarmWindow.waitForLoadState("domcontentloaded");
+
+  // Wrong code: the alarm-event view reveals the wrong-password alert, clears
+  // the pad for re-entry, and the window stays open (Issue #7 AC #4 — no rate
+  // limit, no hint of partial correctness, alarm does not resume earlier).
+  await typePasswordSlots(alarmWindow, MISMATCH_PASSWORD);
+  await expect(alarmWindow.getByTestId("alarm-event.wrong-password")).toBeVisible();
+  await expect.poll(() => liveWindowCount(app), { timeout: 5_000 }).toBe(2);
+
+  // Correct code now closes the window and clears the pad -> atomic dismiss.
+  // Same close-race as the happy-path test — the 6th key triggers dismissAlarm
+  // (IPC) which the shell closes over; closePromise is armed first and any
+  // trailing "Target page has been closed" is swallowed by the tolerant variant.
+  const closePromise = alarmWindow.waitForEvent("close", { timeout: 15_000 });
+  await typePasswordSlotsTolerant(alarmWindow, TEST_PASSWORD);
+  await closePromise;
+  await expect.poll(() => liveWindowCount(app), { timeout: 10_000 }).toBe(1);
+
+  await expect(page.getByTestId("todo-item.Slice6 wrong pw.complete")).toHaveText("取消完成");
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+});
+
+/**
+ * Slice-6 reboot-escape e2e (Issue #7 AC #7-#8 + ADR 0007 "Reboot escape"):
+ * alarm fires → user powers off / force-quits without dismissing → on next
+ * launch the home view surfaces a `pendingPostRebootBanner` joined to the
+ * escaped Todo, and the user can dismiss the banner (Todo stays un-completed
+ * — the alarm wasn't actually addressed).
+ *
+ * Why past-dueAt: the slice-5 alarm-fires-at-next-minute test pays a
+ * 0–60s real-time wait because the `datetime-local` input clamps to the
+ * nearest future minute. Here, we want the alarm to fire deterministically
+ * within the test budget; filling a past `dueAt` lands in the `Reminder`
+ * schema and `scheduleAlarm`'s `Math.max(0, triggerAt - Date.now())` arm
+ * fires immediately, so the alarm window opens within milliseconds of the
+ * form save — no minute-boundary wait. The Todo schema accepts past `dueAt`
+ * (epoch ms; no schema-side clamp — ADR 0006 only constrains that
+ * `reminderId != null` requires `dueAt != null`, not a future value).
+ *
+ * The close path: `app.close()` triggers `before-quit` (the
+ * `registerRebootEscape` trigger), which synchronously rewrites the on-disk
+ * `snapshot.json` to set `pendingPostRebootBanner: true` for every escaped
+ * Reminder whose Todo is un-completed (the canonical matcher lives in
+ * `src/src/persistence/markRebootEscapes.ts`; the Electron main-process
+ * mirror is in `apps/electron/main/rebootEscape.ts` — drift-guard contract
+ * in that file's docstring).
+ */
+test("slice-6: alarm skipped by reboot surfaces post-reboot banner on next launch", async () => {
+  test.setTimeout(90_000); // 2 launches + alarm-hop + relaunch assertion
+  const userDataDir = await freshUserDataDir();
+
+  let app = await launchCookietodo(userDataDir);
+  let page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // ARM: create an alarm Todo with a past `dueAt` so it fires immediately.
+  await page.getByTestId("home.create-todo").click();
+  await expect(page.getByTestId("todo-form")).toBeVisible();
+  await page.getByTestId("todo-form.title").fill("Skipped");
+  const pastDueLocal = toLocalDateTimeInput(Date.now() - 60_000);
+  await page.getByTestId("todo-form.due-at").fill(pastDueLocal);
+  await expect(page.getByTestId("todo-form.reminder-toggle")).toBeEnabled();
+  await page.getByTestId("todo-form.reminder-toggle").check();
+  await page.getByTestId("todo-form.save").click();
+
+  // Let the alarm fire (deterministic on past-dueAt — fires within
+  // milliseconds of `scheduleAlarm`). The alarm window opens; we do NOT
+  // dismiss it. Closing the app with the alarm window open simulates a
+  // reboot/power-off mid-alarm: `before-quit` → `markRebootEscapesToFile`
+  // rewrites snapshot.json setting `pendingPostRebootBanner: true`.
+  await app.waitForEvent("window", {
+    predicate: (w) => w.url().includes("/alarm"),
+    timeout: 15_000,
+  });
+  await app.close();
+
+  // RELAUNCH — fresh Electron process on the SAME userDataDir. The on-disk
+  // snapshot has the escaped Reminder flagged; the renderer's HomeView
+  // reads it on the `loadSnapshot` subscription and renders the bypass
+  // banner. The Todo is NOT silently completed (AC #7 invariant).
+  app = await launchCookietodo(userDataDir);
+  page = await app.firstWindow();
+  await expect(page.locator('[data-testid="hello-screen"]')).toBeVisible();
+
+  await expect(page.getByTestId("alarm-bypass-banner.Skipped")).toBeVisible();
+  // AC #7 invariant: the Todo stays un-completed through the reboot.
+  await expect(page.getByTestId("todo-item.Skipped.complete")).toHaveText("完成");
+  // Underlying Reminder state stays `fired` — only the banner was added.
+  // The banner-dismiss button is rendered next to it.
+  await expect(page.getByTestId("alarm-bypass.banner.dismiss")).toBeVisible();
+
+  // Click `dismiss` — HomeView's clearRebootBanner clears the flag only;
+  // the Reminder stays `fired` (the user must complete the Todo via the
+  // row's own UI to truly close the loop).
+  await page.getByTestId("alarm-bypass.banner.dismiss").click();
+  await expect(page.getByTestId("alarm-bypass-banner.Skipped")).toHaveCount(0);
+  await expect(page.getByTestId("todo-item.Skipped.complete")).toHaveText("完成");
 
   await app.close();
   await rm(userDataDir, { recursive: true, force: true });
