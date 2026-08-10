@@ -43,6 +43,10 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
   // `triggerAt` defaults to the Todo's `dueAt` in the editor UI (AC #4); the
   // user may override it separately ("remind me 5 minutes before due").
   const [triggerAt, setTriggerAt] = useState<string>(epochToInputValue(todo?.dueAt ?? null));
+  // Hand-completion (AC #8 / ADR 0007): the in-form "completed" checkbox is
+  // the offline equivalent of password-dismiss — completing clears the fired
+  // Reminder in the store (T3), so no extra logic is needed here.
+  const [completed, setCompleted] = useState<boolean>(todo?.completed ?? false);
   const [error, setError] = useState<string | null>(null);
 
   function handleListIdsChange(e: React.ChangeEvent<HTMLSelectElement>): void {
@@ -86,12 +90,19 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
       setError(t("todo.validation-reminder-needs-due"));
       return;
     }
+    // completedAt transition: preserved when an already-completed Todo is
+    // saved unchanged, stamped now on a false→true flip, null on un-complete.
+    const completedAt = completed
+      ? todo?.completed
+        ? (todo.completedAt ?? Date.now())
+        : Date.now()
+      : null;
     const input = {
       title: trimmed,
       notes,
       listIds,
-      completed: todo?.completed ?? false,
-      completedAt: todo?.completedAt ?? null,
+      completed,
+      completedAt,
       dueAt: dueEpoch,
       reminderId: reminderActive ? (todo?.reminderId ?? (ulid() as Todo["id"])) : null,
       reminderTriggerAt: reminderActive ? triggerEpoch : null,
@@ -107,6 +118,8 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
         notes: parsed.data.notes,
         listIds: parsed.data.listIds,
         dueAt: parsed.data.dueAt,
+        completed: parsed.data.completed,
+        completedAt: parsed.data.completedAt,
         reminderId: parsed.data.reminderId,
         reminderTriggerAt: parsed.data.reminderTriggerAt,
       });
@@ -167,6 +180,15 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
           value={dueAt}
           data-testid="todo-form.due-at"
           onChange={(e) => setDueAt(e.target.value)}
+        />
+      </label>
+      <label>
+        {t("todo.field-completed")}
+        <input
+          type="checkbox"
+          checked={completed}
+          data-testid="todo-form.completed"
+          onChange={(e) => setCompleted(e.target.checked)}
         />
       </label>
       <label>

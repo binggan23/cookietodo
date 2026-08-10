@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { List, Todo } from "../domain/types";
+import type { List, Reminder, Todo } from "../domain/types";
 import {
+  useClearRebootBanner,
   useDeleted,
   useDeleteTodo,
   useLists,
   useLoad,
   useLoaded,
+  useReminders,
   useTodos,
   useToggleCompleted,
 } from "../store/hooks";
@@ -27,9 +29,12 @@ export function HomeView(): JSX.Element {
   const load = useLoad();
   const deleteTodo = useDeleteTodo();
   const toggleCompleted = useToggleCompleted();
+  const reminders = useReminders();
+  const clearRebootBanner = useClearRebootBanner();
 
   const [mode, setMode] = useState<Mode>("flat");
   const [form, setForm] = useState<OverlayForm>(null);
+  const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
 
   useEffect(() => {
     if (!loaded) {
@@ -39,8 +44,58 @@ export function HomeView(): JSX.Element {
 
   const showLoading = !loaded && todos.length === 0;
 
+  // Post-reboot alarm-bypass banners (AC #8): surface every escaped Reminder —
+  // either `fired` (alarm rang before reboot, never dismissed/snoozed) OR
+  // `pending` with a past-due `triggerAt` (alarm armed for a moment in the
+  // past the scheduler never got to fire before shutdown) — gated on
+  // `pendingPostRebootBanner` and joined to its Todo. The matcher shape
+  // mirrors the canonical `markRebootEscapes` pure fn in
+  // `src/persistence/markRebootEscapes.ts` (the renderer-side copy this
+  // banner reads) so the banner the user sees is exactly the set the trigger
+  // flagged (drift-guard contract).
+  const now = Date.now();
+  const pendingBypass = reminders
+    .filter(
+      (r) =>
+        r.pendingPostRebootBanner &&
+        (r.state === "fired" || (r.state === "pending" && r.triggerAt <= now)),
+    )
+    .map((r) => ({ reminder: r, todo: todos.find((t) => t.id === r.todoId) }))
+    .filter((x): x is { reminder: Reminder; todo: Todo } => x.todo !== undefined);
+
+  const openTodoDetail = (todo: Todo): void => {
+    setEditingTodo(todo);
+    setForm("todo");
+  };
+
   return (
     <div className="home-view">
+      {pendingBypass.length > 0 && (
+        <div className="alarm-bypass-banners">
+          {pendingBypass.map(({ reminder, todo }) => (
+            <div
+              key={reminder.id}
+              className="alarm-bypass-banner"
+              data-testid={`alarm-bypass-banner.${todo.title}`}
+            >
+              <button
+                type="button"
+                data-testid="alarm-bypass.banner.open"
+                onClick={() => openTodoDetail(todo)}
+              >
+                {t("alarm.bypass.banner", { title: todo.title })}
+              </button>
+              <button
+                type="button"
+                data-testid="alarm-bypass.banner.dismiss"
+                onClick={() => clearRebootBanner(reminder.id)}
+              >
+                {t("alarm.bypass.dismiss")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="home-toolbar">
         <button
           type="button"
@@ -49,7 +104,14 @@ export function HomeView(): JSX.Element {
         >
           {mode === "flat" ? t("home.toggle-grouped") : t("home.toggle-flat")}
         </button>
-        <button type="button" data-testid="home.create-todo" onClick={() => setForm("todo")}>
+        <button
+          type="button"
+          data-testid="home.create-todo"
+          onClick={() => {
+            setEditingTodo(null);
+            setForm("todo");
+          }}
+        >
           {t("home.create-todo")}
         </button>
         <button type="button" data-testid="home.create-list" onClick={() => setForm("list")}>
@@ -87,7 +149,15 @@ export function HomeView(): JSX.Element {
 
       <DeletedView />
 
-      {form === "todo" && <TodoForm onClose={() => setForm(null)} />}
+      {form === "todo" && (
+        <TodoForm
+          todo={editingTodo ?? undefined}
+          onClose={() => {
+            setForm(null);
+            setEditingTodo(null);
+          }}
+        />
+      )}
       {form === "list" && <ListForm onClose={() => setForm(null)} />}
       {form === "settings" && <SettingsView onClose={() => setForm(null)} />}
     </div>
