@@ -66,6 +66,12 @@ function makeMemoryStoreAdapter(stub?: Partial<Snapshot>): StoreAdapter {
     async exportSnapshot(): Promise<never> {
       throw new Error("not impl");
     },
+    async readHistoryFile(): Promise<string | null> {
+      return null;
+    },
+    async appendHistoryFile(): Promise<void> {
+      // no-op
+    },
   };
 }
 

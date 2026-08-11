@@ -58,4 +58,15 @@ export interface StoreAdapter {
    * Out of scope for slice 3 — implementations throw `not-implemented`.
    */
   exportSnapshot(): Promise<File>;
+  /**
+   * Read a logical file from the store's data directory (e.g.
+   * `snapshot.history.jsonl`). Missing file returns `null`.
+   * Slice 7 — sync history.
+   */
+  readHistoryFile(filename: string): Promise<string | null>;
+  /**
+   * Append a line to a logical file in the store's data directory.
+   * Slice 7 — sync history (append-only JSONL).
+   */
+  appendHistoryFile(filename: string, line: string): Promise<void>;
 }

@@ -20,11 +20,9 @@ const EMPTY_SNAPSHOT: Snapshot = SnapshotSchema.parse({});
 
 export class MemoryStoreAdapter implements StoreAdapter {
   private state: Snapshot = EMPTY_SNAPSHOT;
+  private historyLines: Map<string, string> = new Map();
 
   async loadSnapshot(): Promise<Snapshot> {
-    // Re-validate on every read so a corrupt externally-set `state` is
-    // caught here, not by the Store mid-mutation. The `parse` of an
-    // already-typed value is cheap and pure.
     return SnapshotSchema.parse(this.state);
   }
 
@@ -38,5 +36,14 @@ export class MemoryStoreAdapter implements StoreAdapter {
 
   async exportSnapshot(): Promise<File> {
     throw new Error("MemoryStoreAdapter.exportSnapshot: not-implemented this slice");
+  }
+
+  async readHistoryFile(filename: string): Promise<string | null> {
+    return this.historyLines.get(filename) ?? null;
+  }
+
+  async appendHistoryFile(filename: string, line: string): Promise<void> {
+    const existing = this.historyLines.get(filename) ?? "";
+    this.historyLines.set(filename, existing + line);
   }
 }

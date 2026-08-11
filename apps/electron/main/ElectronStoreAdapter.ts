@@ -131,6 +131,24 @@ export class ElectronStoreAdapter implements StoreAdapter {
   async exportSnapshot(): Promise<File> {
     throw new Error("ElectronStoreAdapter.exportSnapshot: not-implemented this slice");
   }
+
+  async readHistoryFile(filename: string): Promise<string | null> {
+    try {
+      const dir = app.getPath("userData");
+      return await readFile(`${dir}/${filename}`, "utf8");
+    } catch (err) {
+      if (isEnoent(err)) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async appendHistoryFile(filename: string, line: string): Promise<void> {
+    const dir = app.getPath("userData");
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(`${dir}/${filename}`, line, "utf8");
+  }
 }
 
 /**

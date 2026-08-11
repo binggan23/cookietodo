@@ -31,12 +31,14 @@ import { ipcMain } from "electron";
  */
 const CHANNEL_PREFIX = "cookietodo:store:";
 
-function channelFor(method: "loadSnapshot" | "saveSnapshot"): string {
+function channelFor(
+  method: "loadSnapshot" | "saveSnapshot" | "readHistoryFile" | "appendHistoryFile",
+): string {
   return `${CHANNEL_PREFIX}${method}`;
 }
 
 /**
- * Register the 2 `ipcMain.handle` channels for the given {@link StoreAdapter}.
+ * Register the 4 `ipcMain.handle` channels for the given {@link StoreAdapter}.
  * `event` is the Electron invoke event; it's unused (the handlers neither
  * depend on sender nor return frame, and the renderer proxy reads the
  * resolved Promise value — same shape as slice-2
@@ -47,4 +49,13 @@ export function registerStoreAdapterIpc(adapter: StoreAdapter): void {
   ipcMain.handle(channelFor("saveSnapshot"), async (_event, snapshot: Snapshot) => {
     await adapter.saveSnapshot(snapshot);
   });
+  ipcMain.handle(channelFor("readHistoryFile"), async (_event, filename: string) => {
+    return adapter.readHistoryFile(filename);
+  });
+  ipcMain.handle(
+    channelFor("appendHistoryFile"),
+    async (_event, filename: string, line: string) => {
+      await adapter.appendHistoryFile(filename, line);
+    },
+  );
 }

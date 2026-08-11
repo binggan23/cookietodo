@@ -121,7 +121,6 @@ function makeMemoryStoreAdapter(stub?: Partial<Snapshot>): StoreAdapter {
   };
   return {
     async loadSnapshot(): Promise<Snapshot> {
-      // Defensive copy so caller mutation doesn't leak across the boundary.
       return JSON.parse(JSON.stringify(snap)) as Snapshot;
     },
     async saveSnapshot(s: Snapshot): Promise<void> {
@@ -132,6 +131,12 @@ function makeMemoryStoreAdapter(stub?: Partial<Snapshot>): StoreAdapter {
     },
     async exportSnapshot(): Promise<never> {
       throw new Error("not impl");
+    },
+    async readHistoryFile(): Promise<string | null> {
+      return null;
+    },
+    async appendHistoryFile(): Promise<void> {
+      // no-op
     },
   };
 }

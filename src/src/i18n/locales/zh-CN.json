@@ -101,5 +101,41 @@
     "import-dismissed": "已取消导入",
     "store-error": "本地数据错误：{{error}}",
     "requires-shell": "导入/导出需要在 Electron 桌面端使用。"
+  },
+  "sync": {
+    "section": "同步（手动）",
+    "summary": "导入另一台设备的快照，然后点击「立即同步」合并本地数据。",
+    "sync-now": "立即同步",
+    "sync-now-import-prompt": "选择另一台设备的快照文件",
+    "revert-last-merge": "撤销上次合并",
+    "revert-last-merge-success": "已撤销到上次合并前的状态。",
+    "revert-last-merge-empty": "没有可撤销的合并记录。",
+    "revert-last-merge-failed": "撤销失败：{{error}}",
+    "sync-success": "同步完成 — {{total}} 项已变更。",
+    "sync-failed": "同步失败：{{error}}",
+    "sync-dismissed": "已取消同步",
+    "merge": {
+      "result": {
+        "toast": "已同步 {{total}} 项，{{conflicts}} 个字段冲突已按 updatedAt 解决 — 点此查看详情",
+        "detail": "查看详情"
+      }
+    },
+    "history": {
+      "title": "同步历史",
+      "empty": "暂无同步记录。",
+      "close": "返回设置",
+      "timestamp": "{{time}}",
+      "conflicts": "{{count}} 个冲突",
+      "changes": "{{count}} 项变更",
+      "revert": "撤销此合并",
+      "entity-kind-todo": "待办",
+      "entity-kind-list": "清单",
+      "entity-kind-reminder": "提醒",
+      "field": "字段",
+      "ancestor": "合并前",
+      "local": "本地",
+      "remote": "远端",
+      "merged": "合并后"
+    }
   }
 }

@@ -13,6 +13,7 @@ import { useStore } from "zustand";
 import type { AlarmAdapter } from "../alarm/AlarmAdapter";
 import type { List, Reminder, Snapshot, Todo, Tombstone } from "../domain/types";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
+import type { SyncResult } from "../sync/orchestrator";
 import {
   type CookietodoStoreState,
   cookietodoStore,
@@ -115,6 +116,14 @@ export function useReplaceSnapshot(): (snapshot: Snapshot) => void {
 
 export function useClearRebootBanner(): (id: Reminder["id"]) => void {
   return useStore(cookietodoStore, (s) => s.clearRebootBanner);
+}
+
+export function useSync(): (remote: Snapshot) => Promise<SyncResult> {
+  return useStore(cookietodoStore, (s) => s.sync);
+}
+
+export function useRevertLastMerge(): () => Promise<boolean> {
+  return useStore(cookietodoStore, (s) => s.revertLastMerge);
 }
 
 export function useCreateTodo(): (input: TodoInput) => Todo {

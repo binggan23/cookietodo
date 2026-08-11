@@ -62,6 +62,8 @@ import {
 } from "../domain/types";
 import { MemoryStoreAdapter } from "../persistence/MemoryStoreAdapter";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
+import type { SyncResult } from "../sync/orchestrator";
+import { revertLastMerge as orchestratorRevertLastMerge, runSync } from "../sync/orchestrator";
 
 /**
  * Input shape for {@link CookietodoStoreApi.createTodo}. Covers the
@@ -189,6 +191,17 @@ export interface CookietodoStoreApi {
   deleteList(id: List["id"]): void;
   /** Slice 6 — dismiss the fired post-reboot banner for a Reminder (issue AC #8). */
   clearRebootBanner(reminderId: Reminder["id"]): void;
+  /**
+   * Slice 7 — run a manual Sync pass. Merges the current local snapshot with
+   * the given remote snapshot (ADR 0004 3-way field-level merge), persists the
+   * result, and appends a history entry. Returns the SyncResult for the UI.
+   */
+  sync(remote: Snapshot): Promise<SyncResult>;
+  /**
+   * Slice 7 — revert the last merge. Restores the active snapshot to the state
+   * before the most recent sync. Returns true on success, false if no history.
+   */
+  revertLastMerge(): Promise<boolean>;
 }
 
 /** Full state returned by `getState()` — the data the UI subscribes to. */
@@ -958,6 +971,25 @@ export function createCookietodoStore(
         });
         persist();
       },
+
+      async sync(remote: Snapshot): Promise<SyncResult> {
+        const result = await runSync(adapter, remote);
+        if (result.ok) {
+          set({ snapshot: result.merged, error: null });
+        } else {
+          set({ error: result.error ?? "Sync failed" });
+        }
+        return result;
+      },
+
+      async revertLastMerge(): Promise<boolean> {
+        const ok = await orchestratorRevertLastMerge(adapter);
+        if (ok) {
+          const snapshot = await adapter.loadSnapshot();
+          set({ snapshot, error: null });
+        }
+        return ok;
+      },
     };
   });
 }
@@ -988,6 +1020,8 @@ const lazyStoreAdapter: StoreAdapter = {
   saveSnapshot: (snapshot) => resolveStoreAdapter().saveSnapshot(snapshot),
   importSnapshot: (file) => resolveStoreAdapter().importSnapshot(file),
   exportSnapshot: () => resolveStoreAdapter().exportSnapshot(),
+  readHistoryFile: (filename) => resolveStoreAdapter().readHistoryFile(filename),
+  appendHistoryFile: (filename, line) => resolveStoreAdapter().appendHistoryFile(filename, line),
 };
 
 function resolveAlarmAdapter(): AlarmAdapter {

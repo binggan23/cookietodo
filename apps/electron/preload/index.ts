@@ -67,11 +67,20 @@ const adapter: DeviceAdapter = {
  * Store adapter proxy — only `loadSnapshot` / `saveSnapshot` are bridged
  * this slice (Import/Export wired in a later slice — see `storeHandlers.ts`).
  */
-const storeAdapter: Pick<StoreAdapter, "loadSnapshot" | "saveSnapshot"> = {
+const storeAdapter: Pick<
+  StoreAdapter,
+  "loadSnapshot" | "saveSnapshot" | "readHistoryFile" | "appendHistoryFile"
+> = {
   loadSnapshot: () =>
     ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}loadSnapshot`) as Promise<Snapshot>,
   saveSnapshot: (snapshot) =>
     ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}saveSnapshot`, snapshot) as Promise<void>,
+  readHistoryFile: (filename) =>
+    ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}readHistoryFile`, filename) as Promise<
+      string | null
+    >,
+  appendHistoryFile: (filename, line) =>
+    ipcRenderer.invoke(`${STORE_CHANNEL_PREFIX}appendHistoryFile`, filename, line) as Promise<void>,
 };
 
 const settingsAdapter: SettingsAdapter = {

@@ -784,3 +784,132 @@ test("slice-6: alarm skipped by reboot surfaces post-reboot banner on next launc
   await app.close();
   await rm(userDataDir, { recursive: true, force: true });
 });
+
+/**
+ * Slice-7 verification seam — manual Sync with 3-way field-level merge.
+ *
+ * Flow:
+ *   1. First launch → home, create a Todo with a List.
+ *   2. Export the snapshot (Snapshot A — local state).
+ *   3. In-app change: delete the Todo.
+ *   4. Import a pre-built Snapshot B (remote state with a different title)
+ *      via the Settings → Sync now flow (which reuses the SettingsAdapter
+ *      import dialog to pick the remote snapshot file).
+ *   5. Assert the merged result has the expected merged state.
+ *   6. Open Sync history, verify the merge entry exists.
+ *   7. Revert last merge and assert the state goes back to the local state.
+ */
+test("slice-7: manual Sync now merges local + remote, history shows the merge, revert works", async () => {
+  const userDataDir = await freshUserDataDir();
+  const dialogDir = await mkdtemp(join(tmpdir(), "cookietodo-fake-dialog-"));
+  const app = await launchCookietodo(userDataDir, dialogDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // --- Seed: create a List + Todo ---
+  await page.getByTestId("home.create-list").click();
+  await page.getByTestId("list-form.name").fill("Work");
+  await page.getByTestId("list-form.color").fill("#3b82f6");
+  await page.getByTestId("list-form.save").click();
+  await expect(page.getByText("Work")).toBeVisible();
+
+  await page.getByTestId("home.create-todo").click();
+  await page.getByTestId("todo-form.title").fill("Original title");
+  await page.getByTestId("todo-form.notes").fill("Original notes");
+  await page.getByTestId("todo-form.save").click();
+  await expect(page.getByTestId("todo-item.Original title.completed")).toBeVisible();
+
+  // --- Export the current snapshot (simulates "local device's state") ---
+  await openSettings(page);
+  await page.getByTestId("settings.export").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+  await page.getByTestId("settings.close").click();
+
+  const localSnapshotPath = join(dialogDir, "export.todo.json");
+  const localRaw = await readFile(localSnapshotPath, "utf8");
+  const localSnapshot = JSON.parse(localRaw) as {
+    todos: Array<{ id: string }>;
+  };
+
+  // --- In-app change: delete the Todo (simulates local changes before sync) ---
+  await page.getByTestId("todo-item.Original title.delete").click();
+  await expect(page.getByTestId("todo-item.Original title.completed")).toHaveCount(0);
+
+  // --- Build a "remote" snapshot with a different title (simulates another device) ---
+  const remoteTodoId = localSnapshot.todos[0]?.id ?? "01ARZ3V8EPRSWSWXN0V4K0K1TR";
+  const remoteSnapshot = {
+    todos: [
+      {
+        id: remoteTodoId,
+        title: "Remote title",
+        notes: "Remote notes",
+        listIds: [],
+        completed: false,
+        completedAt: null,
+        dueAt: null,
+        reminderId: null,
+        createdAt: 1700000000000,
+        updatedAt: 1700000500000,
+        revision: 1,
+      },
+      {
+        id: "01ARZ3V8EPRSWSWXN0V4K0K1TA",
+        title: "Remote-only todo",
+        notes: "From other device",
+        listIds: [],
+        completed: false,
+        completedAt: null,
+        dueAt: null,
+        reminderId: null,
+        createdAt: 1700000000000,
+        updatedAt: 1700000000000,
+        revision: 0,
+      },
+    ],
+    lists: [],
+    reminders: [],
+    deleted: [],
+    schemaVersion: 1,
+  };
+  await writeFile(
+    join(dialogDir, "import.todo.json"),
+    JSON.stringify(remoteSnapshot, null, 2),
+    "utf8",
+  );
+
+  // --- Open Settings and tap Sync now ---
+  await openSettings(page);
+  await expect(page.getByTestId("settings.sync-section")).toBeVisible();
+  await page.getByTestId("settings.sync-now").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+
+  // --- Assert the merged result ---
+  await page.getByTestId("settings.close").click();
+  // The original title was deleted locally but modified remotely — modify wins
+  await expect(page.getByTestId("todo-item.Remote title.completed")).toBeVisible();
+  // The remote-only todo should be visible
+  await expect(page.getByTestId("todo-item.Remote-only todo.completed")).toBeVisible();
+
+  // --- Open Sync history and verify the merge entry ---
+  await openSettings(page);
+  await page.getByTestId("settings.sync-history").click();
+  await expect(page.getByTestId("sync-history-overlay")).toBeVisible();
+  await expect(page.getByTestId("sync-history-list")).toBeVisible();
+
+  // Expand the first entry
+  await page.getByTestId("sync-history.entry.0").click();
+  await expect(page.getByTestId("sync-history.entry.0.detail")).toBeVisible();
+
+  // --- Revert last merge via the history entry ---
+  await page.getByTestId("sync-history.entry.0.revert").click();
+  await page.getByTestId("sync-history.close").click();
+  await page.getByTestId("settings.close").click();
+
+  // After revert, the state should be back to the local state
+  await expect(page.getByTestId("todo-item.Remote title.completed")).toHaveCount(0);
+  await expect(page.getByTestId("todo-item.Remote-only todo.completed")).toHaveCount(0);
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+  await rm(dialogDir, { recursive: true, force: true });
+});

@@ -101,5 +101,41 @@
     "import-dismissed": "Import cancelled",
     "store-error": "Store error: {{error}}",
     "requires-shell": "Import/Export requires the Electron shell."
+  },
+  "sync": {
+    "section": "Sync (manual)",
+    "summary": "Import a snapshot from another device, then tap Sync now to merge your local data with it.",
+    "sync-now": "Sync now",
+    "sync-now-import-prompt": "Pick the snapshot file from the other device",
+    "revert-last-merge": "Revert last merge",
+    "revert-last-merge-success": "Reverted to the state before the last merge.",
+    "revert-last-merge-empty": "No merge to revert.",
+    "revert-last-merge-failed": "Revert failed: {{error}}",
+    "sync-success": "Sync complete — {{total}} items changed.",
+    "sync-failed": "Sync failed: {{error}}",
+    "sync-dismissed": "Sync cancelled",
+    "merge": {
+      "result": {
+        "toast": "Synced {{total}} items, {{conflicts}} field conflicts resolved by updatedAt — tap to view details",
+        "detail": "View details"
+      }
+    },
+    "history": {
+      "title": "Sync history",
+      "empty": "No syncs yet.",
+      "close": "Back to Settings",
+      "timestamp": "{{time}}",
+      "conflicts": "{{count}} conflicts",
+      "changes": "{{count}} changes",
+      "revert": "Revert this merge",
+      "entity-kind-todo": "Todo",
+      "entity-kind-list": "List",
+      "entity-kind-reminder": "Reminder",
+      "field": "Field",
+      "ancestor": "Before",
+      "local": "Local",
+      "remote": "Remote",
+      "merged": "Merged"
+    }
   }
 }
