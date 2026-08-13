@@ -18,6 +18,7 @@
     "prepackage": "pnpm build:renderer && pnpm build:main && mkdir -p renderer-dist && cp -r ../../src/dist/* renderer-dist/",
     "package": "pnpm prepackage && electron-builder --linux",
     "package:win": "pnpm prepackage && electron-builder --win",
+    "package:all": "pnpm prepackage && electron-builder --linux --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../../src/tsconfig.json",
     "test": "echo \"electron: covered by Playwright e2e seam — run pnpm e2e\" && exit 0",
     "e2e": "pnpm exec playwright test --config=playwright.config.ts",

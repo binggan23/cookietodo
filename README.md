@@ -23,8 +23,10 @@
 
 | Platform | Package | How to install |
 |----------|---------|----------------|
-| **Linux** | [cookietodo-0.0.0-x86_64.AppImage](https://github.com/binggan23/cookietodo/releases/download/v0.1.0/cookietodo-0.0.0-x86_64.AppImage) | `chmod +x *.AppImage && ./cookietodo-*.AppImage` |
+| **Linux** | [cookietodo-0.0.0-x86_64.AppImage](https://github.com/binggan23/cookietodo/releases/download/v0.1.0/cookietodo-0.0.0-x86_64.AppImage) | `chmod +x && ./cookietodo-*.AppImage` |
 | **Linux** | [cookietodo-0.0.0-amd64.deb](https://github.com/binggan23/cookietodo/releases/download/v0.1.0/cookietodo-0.0.0-amd64.deb) | `sudo dpkg -i cookietodo-*.deb` |
+| **Windows** | [cookietodo-0.0.0.exe](https://github.com/binggan23/cookietodo/releases) *(CI builds; coming soon)* | |
+| **Android** | [app-debug.apk](https://github.com/binggan23/cookietodo/releases/download/v0.1.0/app-debug.apk) | `adb install app-debug.apk` or side-load |
 | **Windows** | Installer *(coming soon)* | |
 | **Android** | APK *(build from source)* | See below |
 
