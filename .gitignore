@@ -36,3 +36,4 @@ apps/electron/dist-electron/
 # Playwright e2e artifacts
 apps/electron/test-results/
 apps/electron/playwright-report/
+apps/electron/release/

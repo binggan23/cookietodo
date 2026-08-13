@@ -4,22 +4,51 @@
   "private": true,
   "type": "module",
   "main": "dist-electron/main/index.js",
+  "description": "Local-first cross-platform todo + hard alarm app",
+  "author": "cookietodo <dev@cookietodo.app>",
+  "homepage": "https://github.com/binggan23/cookietodo",
+  "license": "MIT",
   "scripts": {
     "dev": "pnpm run dev:all",
     "dev:all": "concurrently -k -n renderer,electron -c yellow,blue \"pnpm dev:renderer\" \"pnpm dev:electron\"",
     "dev:renderer": "pnpm --filter @cookietodo/renderer dev",
     "dev:electron": "pnpm build:main && wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron --no-sandbox .",
-    "build:renderer": "pnpm --filter @cookietodo/renderer build",
+"build:renderer": "pnpm --filter @cookietodo/renderer build",
     "build:main": "tsc -p tsconfig.electron.json && cp preload/index.cjs dist-electron/preload/index.cjs && mkdir -p dist-electron/assets/alarm-sounds && cp ../../src/assets/alarm-sounds/*.mp3 dist-electron/assets/alarm-sounds/ && cp ../../src/assets/alarm-sounds/sources.md dist-electron/assets/alarm-sounds/sources.md",
-    "build": "pnpm build:renderer && pnpm build:main",
+    "prepackage": "pnpm build:renderer && pnpm build:main && mkdir -p renderer-dist && cp -r ../../src/dist/* renderer-dist/",
+    "package": "pnpm prepackage && electron-builder --linux",
+    "package:win": "pnpm prepackage && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../../src/tsconfig.json",
     "test": "echo \"electron: covered by Playwright e2e seam — run pnpm e2e\" && exit 0",
     "e2e": "pnpm exec playwright test --config=playwright.config.ts",
     "pree2e": "pnpm build:main"
   },
+  "build": {
+    "appId": "com.cookietodo.app",
+    "productName": "cookietodo",
+    "executableName": "cookietodo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "!dist-electron/**/*.map",
+      "!dist-electron/main/**/*.js.map",
+      "../renderer-dist/**/*"
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility",
+      "synopsis": "Local-first todo + hard alarm app",
+      "maintainer": "cookietodo <dev@cookietodo.app>",
+      "artifactName": "cookietodo-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": ["nsis"]
+    }
+  },
   "dependencies": {
     "@cookietodo/renderer": "workspace:*",
-    "electron": "30.5.1",
     "jsonc-parser": "^3.3.1",
     "webdav": "^5.10.0",
     "zod": "^4.4.0"
@@ -29,6 +58,8 @@
     "@types/node": "^20.14.0",
     "concurrently": "^9.0.0",
     "cross-env": "^7.0.3",
+    "electron": "30.5.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.5.0",
     "wait-on": "^8.0.0"
   }

@@ -37,12 +37,7 @@ const RENDERER_PROD_PATH = join(
   __dirname_subst,
   "..",
   "..",
-  "..",
-  "..",
-  "node_modules",
-  "@cookietodo",
-  "renderer",
-  "dist",
+  "renderer-dist",
   "index.html",
 );
 
