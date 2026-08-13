@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -43,3 +44,32 @@ jobs:
 
       - name: Electron main build
         run: pnpm --filter @cookietodo/electron build:main
+
+  release:
+    name: Release (AppImage + deb)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm --filter @cookietodo/electron package
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            apps/electron/release/cookietodo-*.AppImage \
+            apps/electron/release/cookietodo-*.deb \
+            --clobber
