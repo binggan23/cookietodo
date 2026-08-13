@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import { ulid } from "ulid";
-import type { Todo } from "../domain/types";
+import type { Recurrence, Todo } from "../domain/types";
 import { TodoInputSchema, useCreateTodo, useLists, useUpdateTodo } from "../store/hooks";
 
 interface Props {
@@ -47,7 +47,35 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
   // the offline equivalent of password-dismiss — completing clears the fired
   // Reminder in the store (T3), so no extra logic is needed here.
   const [completed, setCompleted] = useState<boolean>(todo?.completed ?? false);
+  const [recurKind, setRecurKind] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [recurInterval, setRecurInterval] = useState<number>(1);
+  const [recurWeekdayMask, setRecurWeekdayMask] = useState<number>(0);
+  const [recurDaysOfMonth, setRecurDaysOfMonth] = useState<string>("");
+  const [recurAnchor, setRecurAnchor] = useState<"due" | "completed">("completed");
+  const [recurCount, setRecurCount] = useState<string>("");
+  const [recurUntil, setRecurUntil] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  function buildRecurrence(): Recurrence | null {
+    if (recurKind === "none") return null;
+    const daysOfMonth: number[] | null =
+      recurKind === "monthly" && recurDaysOfMonth.trim() !== ""
+        ? recurDaysOfMonth
+            .split(",")
+            .map((s) => Number.parseInt(s.trim(), 10))
+            .filter((n) => !Number.isNaN(n) && n >= 1 && n <= 31)
+        : null;
+    return {
+      kind: recurKind,
+      interval: recurInterval,
+      weekdayMask: recurKind === "weekly" ? recurWeekdayMask : null,
+      daysOfMonth: recurKind === "monthly" ? (daysOfMonth?.length ? daysOfMonth : null) : null,
+      nthWeekday: null,
+      count: recurCount !== "" ? Number.parseInt(recurCount, 10) : null,
+      until: recurUntil !== "" ? new Date(recurUntil).getTime() : null,
+      anchor: recurAnchor,
+    };
+  }
 
   function handleListIdsChange(e: React.ChangeEvent<HTMLSelectElement>): void {
     const next = Array.from(e.target.selectedOptions).map((o) => o.value);
@@ -97,6 +125,7 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
         ? (todo.completedAt ?? Date.now())
         : Date.now()
       : null;
+    const recur = reminderActive ? buildRecurrence() : null;
     const input = {
       title: trimmed,
       notes,
@@ -106,6 +135,7 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
       dueAt: dueEpoch,
       reminderId: reminderActive ? (todo?.reminderId ?? (ulid() as Todo["id"])) : null,
       reminderTriggerAt: reminderActive ? triggerEpoch : null,
+      reminderRecur: recur,
     };
     const parsed = TodoInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -122,6 +152,7 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
         completedAt: parsed.data.completedAt,
         reminderId: parsed.data.reminderId,
         reminderTriggerAt: parsed.data.reminderTriggerAt,
+        reminderRecur: parsed.data.reminderRecur,
       });
     } else {
       createTodo(parsed.data);
@@ -232,6 +263,110 @@ export function TodoForm({ todo, onClose }: Props): JSX.Element {
           />
           <span className="helper-text">{t("todo.field-reminder-trigger-offset-hint")}</span>
         </label>
+      )}
+      {reminderOn && !reminderDisabled && (
+        <fieldset className="recurrence-section" data-testid="todo-form.recurrence">
+          <legend>{t("todo.field-recurrence")}</legend>
+          <label>
+            {t("todo.field-recurrence-kind")}
+            <select
+              value={recurKind}
+              data-testid="todo-form.recurrence-kind"
+              onChange={(e) =>
+                setRecurKind(e.target.value as "none" | "daily" | "weekly" | "monthly")
+              }
+            >
+              <option value="none">{t("todo.recurrence-none")}</option>
+              <option value="daily">{t("todo.recurrence-daily")}</option>
+              <option value="weekly">{t("todo.recurrence-weekly")}</option>
+              <option value="monthly">{t("todo.recurrence-monthly")}</option>
+            </select>
+          </label>
+          {recurKind !== "none" && (
+            <label>
+              {t("todo.field-recurrence-interval")}
+              <input
+                type="number"
+                min={1}
+                value={recurInterval}
+                data-testid="todo-form.recurrence-interval"
+                onChange={(e) =>
+                  setRecurInterval(Math.max(1, Number.parseInt(e.target.value, 10) || 1))
+                }
+              />
+            </label>
+          )}
+          {recurKind === "weekly" && (
+            <div className="weekday-checkboxes">
+              <span>{t("todo.field-recurrence-weekdays")}</span>
+              {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map((day, i) => (
+                <label key={day}>
+                  <input
+                    type="checkbox"
+                    checked={(recurWeekdayMask & (1 << i)) !== 0}
+                    data-testid={`todo-form.recurrence-weekday-${day}`}
+                    onChange={(e) => {
+                      const bit = 1 << i;
+                      setRecurWeekdayMask(
+                        e.target.checked ? recurWeekdayMask | bit : recurWeekdayMask & ~bit,
+                      );
+                    }}
+                  />
+                  {t(`todo.weekday-short-${day.toLowerCase()}`)}
+                </label>
+              ))}
+            </div>
+          )}
+          {recurKind === "monthly" && (
+            <label>
+              {t("todo.field-recurrence-days-of-month")}
+              <input
+                type="text"
+                value={recurDaysOfMonth}
+                placeholder="1,15"
+                data-testid="todo-form.recurrence-days-of-month"
+                onChange={(e) => setRecurDaysOfMonth(e.target.value)}
+              />
+              <span className="helper-text">{t("todo.field-recurrence-days-of-month-hint")}</span>
+            </label>
+          )}
+          {recurKind !== "none" && (
+            <>
+              <label>
+                {t("todo.field-recurrence-count")}
+                <input
+                  type="number"
+                  min={1}
+                  value={recurCount}
+                  data-testid="todo-form.recurrence-count"
+                  onChange={(e) => setRecurCount(e.target.value)}
+                />
+                <span className="helper-text">{t("todo.field-recurrence-count-hint")}</span>
+              </label>
+              <label>
+                {t("todo.field-recurrence-until")}
+                <input
+                  type="datetime-local"
+                  value={recurUntil}
+                  data-testid="todo-form.recurrence-until"
+                  onChange={(e) => setRecurUntil(e.target.value)}
+                />
+                <span className="helper-text">{t("todo.field-recurrence-until-hint")}</span>
+              </label>
+              <label>
+                {t("todo.field-recurrence-anchor")}
+                <select
+                  value={recurAnchor}
+                  data-testid="todo-form.recurrence-anchor"
+                  onChange={(e) => setRecurAnchor(e.target.value as "due" | "completed")}
+                >
+                  <option value="due">{t("todo.recurrence-anchor-due")}</option>
+                  <option value="completed">{t("todo.recurrence-anchor-completed")}</option>
+                </select>
+              </label>
+            </>
+          )}
+        </fieldset>
       )}
       {error && (
         <p role="alert" className="form-error">

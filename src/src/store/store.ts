@@ -45,6 +45,7 @@ import * as z from "zod";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AlarmActionPayload, AlarmAdapter, AlarmFiredPayload } from "../alarm/AlarmAdapter";
 import { electronAlarmStub } from "../alarm/electronRendererStub";
+import { computeNextTriggerAt } from "../alarm/scheduler";
 import { MAX_SNOOZES, SNOOZE_INTERVAL_MS } from "../alarm/snoozeConfig";
 import {
   epochMs,
@@ -52,6 +53,8 @@ import {
   IdSchema,
   type List,
   ListSchema,
+  type Recurrence,
+  RecurrenceSchema,
   type Reminder,
   ReminderSchema,
   type Snapshot,
@@ -100,6 +103,8 @@ export const TodoInputSchema = z
     reminderId: IdSchema.nullable(),
     /** Slice 5 — fire time for the Reminder entity. `null` when `reminderId` is `null`. */
     reminderTriggerAt: epochMs.nullable(),
+    /** Slice 9 — recurrence configuration for the Reminder. `null` when `reminderId` is `null`. */
+    reminderRecur: RecurrenceSchema.nullable(),
   })
   .superRefine((input, ctx) => {
     if (input.reminderId !== null && input.dueAt === null) {
@@ -162,6 +167,8 @@ export type TodoPatch = Partial<Omit<Todo, "id" | "createdAt" | "updatedAt" | "r
    *   - Both undefined ⟹ leave the Reminder entity as-is (no field mutation).
    */
   reminderTriggerAt?: number | null;
+  /** Slice 9 — recurrence configuration for the Reminder. */
+  reminderRecur?: Recurrence | null;
 };
 /** Patch allowed on `updateList`. */
 export type ListPatch = Partial<Omit<List, "id" | "createdAt" | "updatedAt" | "revision">>;
@@ -365,6 +372,64 @@ export function createCookietodoStore(
       updateReminder(payload.reminderId, { state: "fired" });
     });
 
+    // Slice 9 — fire-and-forget recurrence scheduling after a completion event
+    // (dismiss or toggle). Computes the next trigger and adds a new Reminder
+    // entity + alarm in a second set+persist pass, since the initial synchronous
+    // mutation has already cleared the parent and completed the Todo. This is
+    // called after persist() in both dismiss and toggleCompleted paths.
+    const scheduleRecurrenceAsync = async (
+      oldReminder: Reminder | undefined,
+      todo: Todo,
+      completedAt: number,
+    ): Promise<void> => {
+      if (oldReminder === undefined) return;
+      if (oldReminder.recur === null) return;
+      try {
+        const now = Date.now();
+        const nextTriggerAt = await computeNextTriggerAt(
+          oldReminder.recur,
+          completedAt,
+          oldReminder.triggerAt,
+        );
+        if (nextTriggerAt === null) return;
+        const newReminder = ReminderSchema.parse({
+          id: ulid() as Reminder["id"],
+          todoId: todo.id,
+          triggerAt: nextTriggerAt,
+          recur: { ...oldReminder.recur },
+          state: "pending",
+          snoozedUntil: null,
+          snoozeCount: 0,
+          pendingPostRebootBanner: false,
+          permissionRefusedAt: null,
+          recurredTo: null,
+          createdAt: now,
+          updatedAt: now,
+          revision: 0,
+        });
+        set((st) => ({
+          snapshot: {
+            ...st.snapshot,
+            reminders: [
+              ...st.snapshot.reminders.map((r) =>
+                r.id === oldReminder.id ? { ...r, recurredTo: newReminder.id } : r,
+              ),
+              newReminder,
+            ],
+          },
+          error: null,
+        }));
+        const currentState = get();
+        const currentTodo = currentState.snapshot.todos.find((t) => t.id === todo.id);
+        if (currentTodo !== undefined) {
+          scheduleIfArmed(newReminder, currentTodo);
+        }
+        persist();
+      } catch (err) {
+        console.error("cookietodo store: scheduleRecurrenceAsync failed", err);
+      }
+    };
+
     // Slice 6 — password-dismiss (ADR 0007 Decision A). The shell closed the
     // Alarm Event after a correct 6-digit password; the store advances the
     // Reminder `fired` → `cleared` AND the owning Todo → completed in ONE
@@ -416,6 +481,8 @@ export function createCookietodoStore(
           error: null,
         });
         persist();
+        // Slice 9 — fire-and-forget recurrence scheduling (anchor='completed').
+        void scheduleRecurrenceAsync(reminder, completedTodo, now);
       } catch (err) {
         set({ error: err instanceof z.ZodError ? err.message : String(err) });
       }
@@ -569,7 +636,7 @@ export function createCookietodoStore(
               id: todo.reminderId as Reminder["id"],
               todoId: todo.id,
               triggerAt: input.reminderTriggerAt,
-              recur: null, // slice 5 floor — recurrence scheduling lands in slice 9.
+              recur: input.reminderRecur ?? null,
               state: "pending",
               snoozedUntil: null,
               snoozeCount: 0,
@@ -642,6 +709,11 @@ export function createCookietodoStore(
           // re-arm branches so a cleared Reminder carries `state: 'cleared'`
           // into `newReminderForSchedule` and `scheduleIfArmed` (pending-only)
           // refuses to re-arm it — no alarm re-fire after manual completion.
+          // Slice 9 — also capture the old Reminder for async recurrence scheduling.
+          const oldReminderForRecur =
+            patch.completed === true
+              ? state.snapshot.reminders.find((r) => r.todoId === id)
+              : undefined;
           if (patch.completed === true) {
             cancelIfArmed(newReminderId);
             reminders = clearReminderOnCompletion(reminders, id, Date.now());
@@ -677,7 +749,7 @@ export function createCookietodoStore(
               id: newReminderId as Reminder["id"],
               todoId: updated.id,
               triggerAt: patch.reminderTriggerAt,
-              recur: null,
+              recur: patch.reminderRecur ?? null,
               state: "pending",
               snoozedUntil: null,
               snoozeCount: 0,
@@ -702,9 +774,12 @@ export function createCookietodoStore(
             cancelIfArmed(newReminderId);
             const existingReminder = reminders.find((r) => r.id === newReminderId);
             if (existingReminder !== undefined) {
+              const recur =
+                patch.reminderRecur !== undefined ? patch.reminderRecur : existingReminder.recur;
               const updatedReminder: Reminder = ReminderSchema.parse({
                 ...existingReminder,
                 triggerAt: patch.reminderTriggerAt,
+                recur,
                 updatedAt: Date.now(),
                 revision: existingReminder.revision + 1,
               });
@@ -719,6 +794,10 @@ export function createCookietodoStore(
 
           if (newReminderForSchedule !== null) {
             scheduleIfArmed(newReminderForSchedule, updated);
+          }
+          // Slice 9 — fire-and-forget recurrence scheduling after completion.
+          if (patch.completed === true && oldReminderForRecur !== undefined) {
+            void scheduleRecurrenceAsync(oldReminderForRecur, updated, Date.now());
           }
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
@@ -790,16 +869,18 @@ export function createCookietodoStore(
         }
         try {
           const now = Date.now();
-          const completed = !existing.completed;
+          const completing = !existing.completed;
           const updated = TodoSchema.parse({
             ...existing,
-            completed,
-            completedAt: completed ? now : null,
+            completed: completing,
+            completedAt: completing ? now : null,
             updatedAt: now,
             revision: existing.revision + 1,
           });
           let reminders = state.snapshot.reminders;
-          if (completed && existing.reminderId !== null) {
+          // Capture the old reminder BEFORE mutation for recurrence scheduling.
+          const oldReminder = state.snapshot.reminders.find((r) => r.todoId === id);
+          if (completing && existing.reminderId !== null) {
             // ADR 0007 C-extension: completing = offline password-dismiss —
             // cancel the timer and clear the Reminder in the same mutation.
             cancelIfArmed(existing.reminderId);
@@ -808,6 +889,11 @@ export function createCookietodoStore(
           const todos = state.snapshot.todos.map((t, i) => (i === idx ? updated : t));
           set({ snapshot: { ...state.snapshot, todos, reminders }, error: null });
           persist();
+          // Slice 9 — fire-and-forget recurrence scheduling (anchor='completed').
+          // Runs after set+persist so the cleared state is persisted first.
+          if (completing && oldReminder !== undefined) {
+            void scheduleRecurrenceAsync(oldReminder, updated, now);
+          }
         } catch (err) {
           set({ error: err instanceof z.ZodError ? err.message : String(err) });
         }
