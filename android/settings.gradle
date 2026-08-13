@@ -1,0 +1,7 @@
+include ':app'
+include ':capacitor-cordova-android-plugins'
+include ':capacitor-plugin-alarm'
+project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+project(':capacitor-plugin-alarm').projectDir = new File('./capacitor-plugin-alarm/')
+
+apply from: 'capacitor.settings.gradle'

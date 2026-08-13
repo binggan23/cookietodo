@@ -1,0 +1,8 @@
+{
+  "appId": "com.cookietodo.app",
+  "appName": "cookietodo",
+  "webDir": "src/dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
