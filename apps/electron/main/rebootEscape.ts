@@ -100,7 +100,13 @@ export function registerRebootEscape(snapshotPath: string): void {
  * not silently rewrite a corrupt file.
  */
 export function markRebootEscapesToFile(snapshotPath: string, now: number): void {
-  const raw = readFileSync(snapshotPath, "utf8");
+  let raw: string;
+  try {
+    raw = readFileSync(snapshotPath, "utf8");
+  } catch {
+    // No snapshot file yet (first launch) — nothing to flag.
+    return;
+  }
   const parsedRaw: unknown = JSON.parse(raw);
   const snapshot: Snapshot = SnapshotSchema.parse(parsedRaw);
 

@@ -34,7 +34,7 @@
       "dist-electron/**/*",
       "!dist-electron/**/*.map",
       "!dist-electron/main/**/*.js.map",
-      "../renderer-dist/**/*"
+      "renderer-dist/**/*"
     ],
     "linux": {
       "target": ["AppImage", "deb"],
