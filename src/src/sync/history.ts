@@ -54,6 +54,13 @@ export interface HistoryEntry {
   ancestorSnapshot: string | null;
   /** The local snapshot before merge, serialized, for revert. */
   localSnapshot: string | null;
+  /**
+   * Opaque per-pass metadata (slice 8). Carries e.g. the WebDAV endpoint
+   * reference as a hash (`webdavUrl`) so a sync pass can be correlated to a
+   * device without the raw endpoint path sitting in the plaintext JSONL.
+   * Absent for manual-file sync passes (never part of the Snapshot JSON).
+   */
+  metadata?: Record<string, string>;
 }
 
 interface EntityDiffRecord {
@@ -142,6 +149,7 @@ export async function appendHistory(
   ancestor: Snapshot | null,
   merged: Snapshot,
   report: MergeReport,
+  metadata?: Record<string, string>,
 ): Promise<void> {
   const entry: HistoryEntry = {
     timestamp: Date.now(),
@@ -174,6 +182,7 @@ export async function appendHistory(
     ),
     ancestorSnapshot: ancestor ? JSON.stringify(ancestor) : null,
     localSnapshot: JSON.stringify(local),
+    ...(metadata ? { metadata } : {}),
   };
 
   const line = `${JSON.stringify(entry)}\n`;

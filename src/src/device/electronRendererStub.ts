@@ -1,4 +1,10 @@
-import type { AlarmSoundId, DeviceAdapter, Locale, WebDAVCredentials } from "./DeviceAdapter";
+import type {
+  AlarmSoundId,
+  DeviceAdapter,
+  Locale,
+  SyncIntervalMinutes,
+  WebDAVCredentials,
+} from "./DeviceAdapter";
 
 /**
  * Slice-2 in-memory `DeviceAdapter` stub backing the renderer when no
@@ -25,6 +31,7 @@ const KEY_LOCALE = `${STORAGE_PREFIX}locale`;
 const KEY_DISMISS_PASSWORD = `${STORAGE_PREFIX}dismiss-password`;
 const KEY_ALARM_SOUND_ID = `${STORAGE_PREFIX}alarm-sound-id`;
 const KEY_WEBDAV_PREFIX = `${STORAGE_PREFIX}webdav.`;
+const KEY_SYNC_INTERVAL = `${STORAGE_PREFIX}sync-interval`;
 
 function isLocale(v: unknown): v is Locale {
   return v === "zh-CN" || v === "en-US";
@@ -32,6 +39,10 @@ function isLocale(v: unknown): v is Locale {
 
 function isAlarmSoundId(v: unknown): v is AlarmSoundId {
   return typeof v === "number" && v >= 1 && v <= 5;
+}
+
+function isSyncInterval(v: unknown): v is SyncIntervalMinutes {
+  return v === 1 || v === 5 || v === 15 || v === 30 || v === 60;
 }
 
 function localStorageOrThrow(): Storage {
@@ -80,5 +91,13 @@ export const electronRendererStub: DeviceAdapter = {
   },
   async saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): Promise<void> {
     localStorageOrThrow().setItem(`${KEY_WEBDAV_PREFIX}${url}`, JSON.stringify(credentials));
+  },
+  async getSyncInterval(): Promise<SyncIntervalMinutes | null> {
+    const raw = localStorageOrThrow().getItem(KEY_SYNC_INTERVAL);
+    const n = raw === null ? NaN : Number(raw);
+    return isSyncInterval(n) ? n : null;
+  },
+  async saveSyncInterval(minutes: SyncIntervalMinutes): Promise<void> {
+    localStorageOrThrow().setItem(KEY_SYNC_INTERVAL, String(minutes));
   },
 };

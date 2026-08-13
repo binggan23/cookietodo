@@ -4,6 +4,7 @@ import type {
   AlarmSoundId,
   DeviceAdapter,
   Locale,
+  SyncIntervalMinutes,
   WebDAVCredentials,
 } from "@cookietodo/renderer/device";
 import { app, safeStorage } from "electron";
@@ -44,6 +45,8 @@ interface DeviceStoreEnvelope {
   dismissPasswordCipher: string | null;
   /** Per-endpoint WebDAV credentials — values are base64 ciphers. */
   webdav: Record<string, StoredWebDAVCredentials>;
+  /** Configured sync interval in minutes (plaintext, non-secret). */
+  syncIntervalMinutes: SyncIntervalMinutes | null;
 }
 
 interface StoredWebDAVCredentials {
@@ -58,6 +61,7 @@ const EMPTY_ENVELOPE: DeviceStoreEnvelope = {
   alarmSoundId: null,
   dismissPasswordCipher: null,
   webdav: {},
+  syncIntervalMinutes: null,
 };
 
 /**
@@ -92,6 +96,10 @@ function isAlarmSoundId(v: unknown): v is AlarmSoundId {
   return typeof v === "number" && v >= 1 && v <= 5;
 }
 
+function isSyncIntervalMinutes(v: unknown): v is SyncIntervalMinutes {
+  return v === 1 || v === 5 || v === 15 || v === 30 || v === 60;
+}
+
 async function readEnvelope(): Promise<DeviceStoreEnvelope> {
   try {
     const raw = await readFile(storePath(), "utf8");
@@ -105,6 +113,9 @@ async function readEnvelope(): Promise<DeviceStoreEnvelope> {
         parsed.webdav && typeof parsed.webdav === "object" && !Array.isArray(parsed.webdav)
           ? (parsed.webdav as Record<string, StoredWebDAVCredentials>)
           : {},
+      syncIntervalMinutes: isSyncIntervalMinutes(parsed.syncIntervalMinutes)
+        ? parsed.syncIntervalMinutes
+        : null,
     };
   } catch {
     // Missing, unreadable, or malformed store means first-launch (no
@@ -206,6 +217,16 @@ export function createDeviceStore(): DeviceAdapter {
       const passCipher = encryptDeviceSecret(credentials.pass);
       const env = await readEnvelope();
       env.webdav = { ...env.webdav, [url]: { userCipher, passCipher } };
+      await writeEnvelope(env);
+    },
+
+    async getSyncInterval(): Promise<SyncIntervalMinutes | null> {
+      const env = await readEnvelope();
+      return env.syncIntervalMinutes;
+    },
+    async saveSyncInterval(minutes: SyncIntervalMinutes): Promise<void> {
+      const env = await readEnvelope();
+      env.syncIntervalMinutes = isSyncIntervalMinutes(minutes) ? minutes : null;
       await writeEnvelope(env);
     },
   };

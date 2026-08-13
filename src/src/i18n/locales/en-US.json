@@ -136,6 +136,30 @@
       "local": "Local",
       "remote": "Remote",
       "merged": "Merged"
+    },
+    "webdav": {
+      "section": "Sync (WebDAV)",
+      "enable": "Enable Sync",
+      "url": "WebDAV URL",
+      "username": "Username",
+      "password": "Password",
+      "save-credentials": "Save Credentials",
+      "credentials-saved": "Credentials saved successfully.",
+      "sync-now": "Sync now",
+      "last-sync-ok": "Last sync: {{time}} — OK",
+      "last-sync-never": "Last sync: never",
+      "last-sync-failed": "Last sync: failed — {{cause}}",
+      "retry": "Retry now",
+      "offline-subtitle": "App is offline — sync paused, will auto-resume when connection returns.",
+      "interval-label": "Sync interval",
+      "interval-1": "1 minute",
+      "interval-5": "5 minutes",
+      "interval-15": "15 minutes",
+      "interval-30": "30 minutes",
+      "interval-60": "60 minutes",
+      "failed-unauthorized": "Invalid credentials",
+      "failed-server": "Server error",
+      "failed-network": "Network unavailable"
     }
   }
 }

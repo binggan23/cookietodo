@@ -21,6 +21,7 @@
     "@cookietodo/renderer": "workspace:*",
     "electron": "30.5.1",
     "jsonc-parser": "^3.3.1",
+    "webdav": "^5.10.0",
     "zod": "^4.4.0"
   },
   "devDependencies": {

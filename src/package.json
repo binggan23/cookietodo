@@ -39,6 +39,7 @@
     "./snapshot/parse": "./src/snapshot/parse.ts",
     "./snapshot/serialize": "./src/snapshot/serialize.ts",
     "./store": "./src/store/hooks.ts",
+    "./sync/transport/webdav": "./src/sync/transport/webdav.ts",
     "./package.json": "./package.json"
   }
 }

@@ -136,6 +136,30 @@
       "local": "本地",
       "remote": "远端",
       "merged": "合并后"
+    },
+    "webdav": {
+      "section": "同步（WebDAV）",
+      "enable": "开启同步",
+      "url": "WebDAV 地址",
+      "username": "用户名",
+      "password": "密码",
+      "save-credentials": "保存凭据",
+      "credentials-saved": "凭据保存成功。",
+      "sync-now": "立即同步",
+      "last-sync-ok": "上次同步：{{time}} — 成功",
+      "last-sync-never": "上次同步：从未",
+      "last-sync-failed": "上次同步：失败 — {{cause}}",
+      "retry": "立即重试",
+      "offline-subtitle": "App 处于离线状态，同步已暂停，恢复网络后将自动继续。",
+      "interval-label": "同步间隔",
+      "interval-1": "1 分钟",
+      "interval-5": "5 分钟",
+      "interval-15": "15 分钟",
+      "interval-30": "30 分钟",
+      "interval-60": "60 分钟",
+      "failed-unauthorized": "凭据错误",
+      "failed-server": "服务器错误",
+      "failed-network": "网络不可用"
     }
   }
 }

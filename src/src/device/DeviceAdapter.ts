@@ -30,6 +30,11 @@ export interface WebDAVCredentials {
   pass: string;
 }
 
+/** Configurable sync interval in minutes (slice 8, issue #10; default 5). */
+export type SyncIntervalMinutes = 1 | 5 | 15 | 30 | 60;
+
+export const SYNC_INTERVALS: readonly SyncIntervalMinutes[] = [1, 5, 15, 30, 60];
+
 export interface DeviceAdapter {
   /** The user-chosen UI language; null until first-launch language picker. */
   getLocale(): Promise<Locale | null>;
@@ -46,6 +51,10 @@ export interface DeviceAdapter {
   /** Per-device WebDAV credentials (per ADR 0008 + ADR 0010); keyed by endpoint URL. */
   getWebDAVCredentials(url: string): Promise<WebDAVCredentials | null>;
   saveWebDAVCredentials(url: string, credentials: WebDAVCredentials): Promise<void>;
+
+  /** Configured sync interval in minutes (slice 8; null until first set — default 5). */
+  getSyncInterval(): Promise<SyncIntervalMinutes | null>;
+  saveSyncInterval(minutes: SyncIntervalMinutes): Promise<void>;
 }
 
 /**

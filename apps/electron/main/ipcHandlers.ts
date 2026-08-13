@@ -2,6 +2,7 @@ import type {
   AlarmSoundId,
   DeviceAdapter,
   Locale,
+  SyncIntervalMinutes,
   WebDAVCredentials,
 } from "@cookietodo/renderer/device";
 import { ipcMain } from "electron";
@@ -51,4 +52,8 @@ export function registerDeviceAdapterIpc(adapter: DeviceAdapter): void {
     async (_event, url: string, credentials: WebDAVCredentials) =>
       adapter.saveWebDAVCredentials(url, credentials),
   );
+  ipcMain.handle(channelFor("getSyncInterval"), async () => adapter.getSyncInterval());
+  ipcMain.handle(channelFor("saveSyncInterval"), async (_event, minutes: SyncIntervalMinutes) => {
+    await adapter.saveSyncInterval(minutes);
+  });
 }

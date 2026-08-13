@@ -913,3 +913,37 @@ test("slice-7: manual Sync now merges local + remote, history shows the merge, r
   await rm(userDataDir, { recursive: true, force: true });
   await rm(dialogDir, { recursive: true, force: true });
 });
+
+/**
+ * Slice 8 — WebDAV sync transport e2e (issue #10).
+ */
+test("slice-8: WebDAV sync opens settings and configures credentials", async () => {
+  const userDataDir = await freshUserDataDir();
+  const app = await launchCookietodo(userDataDir);
+  const page = await app.firstWindow();
+  await driveFirstLaunchToHome(page);
+
+  // Open Settings and verify the WebDAV section exists
+  await openSettings(page);
+  await expect(page.getByTestId("settings.webdav-section")).toBeVisible();
+  await expect(page.getByTestId("settings.webdav.enable")).toBeVisible();
+
+  // Enable WebDAV sync
+  await page.getByTestId("settings.webdav.enable").click();
+  await page.waitForSelector('[data-testid="settings.webdav.url"]');
+
+  // Enter a dummy WebDAV URL and credentials
+  await page.getByTestId("settings.webdav.url").fill("http://localhost:18080");
+  await page.getByTestId("settings.webdav.username").fill("e2e");
+  await page.getByTestId("settings.webdav.password").fill("e2e");
+
+  // Save credentials
+  await page.getByTestId("settings.webdav.save-credentials").click();
+  await expect(page.getByTestId("settings.feedback.success")).toBeVisible();
+
+  // Close settings
+  await page.getByTestId("settings.close").click();
+
+  await app.close();
+  await rm(userDataDir, { recursive: true, force: true });
+});

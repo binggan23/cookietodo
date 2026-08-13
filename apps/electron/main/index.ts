@@ -10,6 +10,8 @@ import { registerDeviceAdapterIpc } from "./ipcHandlers.js";
 import { registerRebootEscape } from "./rebootEscape.js";
 import { registerSettingsAdapterIpc } from "./settingsHandlers.js";
 import { registerStoreAdapterIpc } from "./storeHandlers.js";
+import { registerWebDAVIpc } from "./webdavHandlers.js";
+import { createWebDAVTransport } from "./webdavTransport.js";
 
 /**
  * Electron main process.
@@ -83,7 +85,8 @@ void app.whenReady().then(async () => {
   // is created so the renderer's `window.cookietodoDeviceAdapter()` calls
   // (fired on first useEffect) cannot race the binding of the matching
   // `ipcMain.handle` channel on the main side.
-  registerDeviceAdapterIpc(createDeviceStore());
+  const deviceAdapter = createDeviceStore();
+  registerDeviceAdapterIpc(deviceAdapter);
   // Slice-3: Store IPC must register before createWindow — App's
   // `window.cookietodoStoreAdapter().loadSnapshot()` fires on mount.
   registerStoreAdapterIpc(new ElectronStoreAdapter());
@@ -96,6 +99,10 @@ void app.whenReady().then(async () => {
   // createWindow — the SettingsView overlay's
   // `window.cookietodoSettingsAdapter()` calls fire on overlay mount.
   registerSettingsAdapterIpc();
+  // Slice-8: WebDAV sync transport must register before createWindow —
+  // the renderer's `window.cookietodoWebDAVTransport()` calls fire on mount.
+  const webdavTransport = createWebDAVTransport((url) => deviceAdapter.getWebDAVCredentials(url));
+  registerWebDAVIpc(webdavTransport);
   // Slice-6: reboot-escape banner trigger — fires on `will-quit` +
   // `session-end` to flag every escaped Reminder (alarm fired / past-due
   // armed, joined to an uncompleted Todo) with `pendingPostRebootBanner`

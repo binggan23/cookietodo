@@ -7,6 +7,7 @@ import type { DeviceAdapter } from "@cookietodo/renderer/device";
 import type { Reminder, Snapshot, Todo } from "@cookietodo/renderer/domain";
 import type { StoreAdapter } from "@cookietodo/renderer/persistence";
 import type { SettingsAdapter } from "@cookietodo/renderer/settings";
+import type { RawWebDAVTransport } from "@cookietodo/renderer/sync/transport/webdav";
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
@@ -35,6 +36,7 @@ const CHANNEL_PREFIX = "cookietodo:device:";
 const STORE_CHANNEL_PREFIX = "cookietodo:store:";
 const SETTINGS_CHANNEL_PREFIX = "cookietodo:settings:";
 const ALARM_CHANNEL_PREFIX = "cookietodo:alarm:";
+const WEBDAV_CHANNEL_PREFIX = "cookietodo:webdav:";
 
 type Resolve<T extends (...args: never) => Promise<unknown>> = Awaited<ReturnType<T>>;
 
@@ -61,6 +63,12 @@ const adapter: DeviceAdapter = {
     >,
   saveWebDAVCredentials: (url, credentials) =>
     ipcRenderer.invoke(`${CHANNEL_PREFIX}saveWebDAVCredentials`, url, credentials) as Promise<void>,
+  getSyncInterval: () =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}getSyncInterval`) as Promise<
+      Resolve<DeviceAdapter["getSyncInterval"]>
+    >,
+  saveSyncInterval: (minutes) =>
+    ipcRenderer.invoke(`${CHANNEL_PREFIX}saveSyncInterval`, minutes) as Promise<void>,
 };
 
 /**
@@ -115,6 +123,8 @@ const alarmAdapter: AlarmAdapter = {
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}dismissAlarm`, reminderId) as Promise<void>,
   snoozeAlarm: (reminderId: Reminder["id"]) =>
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}snoozeAlarm`, reminderId) as Promise<void>,
+  closeAlarmWindow: (reminderId: Reminder["id"]) =>
+    ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}closeAlarmWindow`, reminderId) as Promise<void>,
   onAlarmFired: (callback: (payload: AlarmFiredPayload) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: AlarmFiredPayload): void => {
       callback(payload);
@@ -146,7 +156,18 @@ const alarmAdapter: AlarmAdapter = {
     ipcRenderer.invoke(`${ALARM_CHANNEL_PREFIX}requestPermission`, kind) as Promise<"granted">,
 };
 
+const webdavTransport: RawWebDAVTransport = {
+  acquireLock: (url: string) =>
+    ipcRenderer.invoke(`${WEBDAV_CHANNEL_PREFIX}acquireLock`, url) as Promise<string>,
+  pull: () => ipcRenderer.invoke(`${WEBDAV_CHANNEL_PREFIX}pull`) as Promise<string | null>,
+  putAndUnlock: (lockId: string, raw: string) =>
+    ipcRenderer.invoke(`${WEBDAV_CHANNEL_PREFIX}putAndUnlock`, lockId, raw) as Promise<void>,
+  releaseLock: (lockId: string) =>
+    ipcRenderer.invoke(`${WEBDAV_CHANNEL_PREFIX}releaseLock`, lockId) as Promise<void>,
+};
+
 contextBridge.exposeInMainWorld("cookietodoDeviceAdapter", () => adapter);
 contextBridge.exposeInMainWorld("cookietodoStoreAdapter", () => storeAdapter);
 contextBridge.exposeInMainWorld("cookietodoSettingsAdapter", () => settingsAdapter);
 contextBridge.exposeInMainWorld("cookietodoAlarmAdapter", () => alarmAdapter);
+contextBridge.exposeInMainWorld("cookietodoWebDAVTransport", () => webdavTransport);

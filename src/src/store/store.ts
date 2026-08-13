@@ -209,6 +209,12 @@ export interface CookietodoStoreState extends CookietodoStoreApi {
   snapshot: Snapshot;
   loaded: boolean;
   error: string | null;
+  /** Slice 8 — sync scheduler status (idle/syncing/offline/suspended). */
+  syncStatus: "idle" | "syncing" | "offline" | "suspended";
+  /** Slice 8 — outcome of the last sync pass (null = never synced via WebDAV). */
+  lastSyncResult: SyncResult | null;
+  /** Slice 8 — current sync interval in minutes. */
+  syncIntervalMinutes: number;
 }
 
 /**
@@ -473,6 +479,9 @@ export function createCookietodoStore(
       snapshot: EMPTY_SNAPSHOT,
       loaded: false,
       error: null,
+      syncStatus: "idle",
+      lastSyncResult: null,
+      syncIntervalMinutes: 5,
 
       async load(): Promise<void> {
         try {
@@ -973,11 +982,28 @@ export function createCookietodoStore(
       },
 
       async sync(remote: Snapshot): Promise<SyncResult> {
+        const preReminders = get().snapshot.reminders;
         const result = await runSync(adapter, remote);
         if (result.ok) {
-          set({ snapshot: result.merged, error: null });
+          set({ snapshot: result.merged, error: null, lastSyncResult: result });
+          // Slice 8: cross-device alarm self-dismiss — if the merged snapshot
+          // carries a Reminder whose state transitioned from fired to
+          // cleared/cancelled (or the reminder was deleted), close the local
+          // on-screen Alarm Event window.
+          const postReminders = result.merged.reminders;
+          for (const pre of preReminders) {
+            if (pre.state !== "fired") continue;
+            const post = postReminders.find((r) => r.id === pre.id);
+            const terminal =
+              post === undefined || post.state === "cleared" || post.state === "cancelled";
+            if (terminal) {
+              void alarmAdapter.closeAlarmWindow(pre.id).catch(() => {
+                // Best-effort — the window may already be closed / unknown.
+              });
+            }
+          }
         } else {
-          set({ error: result.error ?? "Sync failed" });
+          set({ error: result.error ?? "Sync failed", lastSyncResult: result });
         }
         return result;
       },
@@ -1038,6 +1064,7 @@ const lazyAlarmAdapter: AlarmAdapter = {
   requestPermission: (kind) => resolveAlarmAdapter().requestPermission(kind),
   dismissAlarm: (reminderId) => resolveAlarmAdapter().dismissAlarm(reminderId),
   snoozeAlarm: (reminderId) => resolveAlarmAdapter().snoozeAlarm(reminderId),
+  closeAlarmWindow: (reminderId) => resolveAlarmAdapter().closeAlarmWindow(reminderId),
   onAlarmDismissed: (cb) => resolveAlarmAdapter().onAlarmDismissed(cb),
   onAlarmSnoozed: (cb) => resolveAlarmAdapter().onAlarmSnoozed(cb),
 };

@@ -119,14 +119,14 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     this.clearTimer(reminderId);
     this.titles.delete(reminderId);
     this.todoIds.delete(reminderId);
-    this.closeAlarmWindow(reminderId);
+    this.closeWindow(reminderId);
   }
 
   async dismissAlarm(reminderId: Reminder["id"]): Promise<void> {
     this.clearTimer(reminderId);
     this.titles.delete(reminderId);
     this.todoIds.delete(reminderId);
-    this.closeAlarmWindow(reminderId);
+    this.closeWindow(reminderId);
     const payload: AlarmActionPayload = { reminderId };
     const mainWC = this.mainWindowRef();
     if (mainWC !== null) {
@@ -141,7 +141,7 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     this.clearTimer(reminderId);
     this.titles.delete(reminderId);
     this.todoIds.delete(reminderId);
-    this.closeAlarmWindow(reminderId);
+    this.closeWindow(reminderId);
     const payload: AlarmActionPayload = { reminderId };
     const mainWC = this.mainWindowRef();
     if (mainWC !== null) {
@@ -186,6 +186,16 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     return "granted";
   }
 
+  async closeAlarmWindow(reminderId: Reminder["id"]): Promise<void> {
+    // Quiet close for a remote merge (slice 8): clears timer + closes the
+    // window but emits NO dismiss/snooze event, so the UI does not treat a
+    // cross-device merge as a local user action.
+    this.clearTimer(reminderId);
+    this.titles.delete(reminderId);
+    this.todoIds.delete(reminderId);
+    this.closeWindow(reminderId);
+  }
+
   private clearTimer(reminderId: Reminder["id"]): void {
     const t = this.timers.get(reminderId);
     if (t !== undefined) {
@@ -194,7 +204,7 @@ export class ElectronAlarmAdapter implements AlarmAdapter {
     this.timers.delete(reminderId);
   }
 
-  private closeAlarmWindow(reminderId: Reminder["id"]): void {
+  private closeWindow(reminderId: Reminder["id"]): void {
     const win = this.windows.get(reminderId);
     if (win !== undefined && !win.isDestroyed()) {
       win.close();

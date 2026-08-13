@@ -126,6 +126,18 @@ export function useRevertLastMerge(): () => Promise<boolean> {
   return useStore(cookietodoStore, (s) => s.revertLastMerge);
 }
 
+export function useSyncStatus(): "idle" | "syncing" | "offline" | "suspended" {
+  return useStore(cookietodoStore, (s) => s.syncStatus);
+}
+
+export function useLastSyncResult(): SyncResult | null {
+  return useStore(cookietodoStore, (s) => s.lastSyncResult);
+}
+
+export function useSyncIntervalMinutes(): number {
+  return useStore(cookietodoStore, (s) => s.syncIntervalMinutes);
+}
+
 export function useCreateTodo(): (input: TodoInput) => Todo {
   return useStore(cookietodoStore, (s) => s.createTodo);
 }

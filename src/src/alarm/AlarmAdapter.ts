@@ -162,6 +162,14 @@ export interface AlarmAdapter {
    */
   onAlarmSnoozed(callback: (payload: AlarmActionPayload) => void): () => void;
   /**
+   * Quietly close the on-screen Alarm Event for `reminderId` and clear its
+   * timer WITHOUT emitting a dismiss/snooze event (slice 8, issue #10). Used
+   * when a remote sync merge flips the Reminder `fired → cleared`/`cancelled`
+   * on another device — the local Alarm Event dismisses itself. Safe call on
+   * unknown / already-closed ids (no-op, NOT a hard failure).
+   */
+  closeAlarmWindow(reminderId: Reminder["id"]): Promise<void>;
+  /**
    * Request the OS-level permission needed by the Alarm Event. On desktop
    * this resolves `"granted"` immediately (alarm + notification + foreground
    * are already allowed in Electron main context per ADR 0002 phone-home path).

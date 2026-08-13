@@ -105,6 +105,9 @@ export function createElectronAlarmStub(): ElectronAlarmStub {
     async snoozeAlarm(reminderId: Reminder["id"]): Promise<void> {
       snoozed.push(reminderId);
     },
+    async closeAlarmWindow(reminderId: Reminder["id"]): Promise<void> {
+      cancelled.push(reminderId);
+    },
     onAlarmDismissed(callback: (payload: AlarmActionPayload) => void): () => void {
       dismissedSubscribers.push(callback);
       return () => {

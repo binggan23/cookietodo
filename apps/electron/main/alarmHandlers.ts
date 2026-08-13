@@ -30,7 +30,13 @@ import { ipcMain } from "electron";
 const CHANNEL_PREFIX = "cookietodo:alarm:";
 
 function channelFor(
-  method: "scheduleAlarm" | "cancelAlarm" | "requestPermission" | "dismissAlarm" | "snoozeAlarm",
+  method:
+    | "scheduleAlarm"
+    | "cancelAlarm"
+    | "requestPermission"
+    | "dismissAlarm"
+    | "snoozeAlarm"
+    | "closeAlarmWindow",
 ): string {
   return `${CHANNEL_PREFIX}${method}`;
 }
@@ -56,5 +62,8 @@ export function registerAlarmAdapterIpc(adapter: AlarmAdapter): void {
   });
   ipcMain.handle(channelFor("snoozeAlarm"), async (_event, reminderId: Reminder["id"]) => {
     await adapter.snoozeAlarm(reminderId);
+  });
+  ipcMain.handle(channelFor("closeAlarmWindow"), async (_event, reminderId: Reminder["id"]) => {
+    await adapter.closeAlarmWindow(reminderId);
   });
 }

@@ -23,6 +23,7 @@ import { SnapshotSchema } from "../domain/types";
 import type { StoreAdapter } from "../persistence/StoreAdapter";
 import { appendHistory, loadRevertAncestor } from "./history";
 import { type MergeResult, merge } from "./merge";
+import type { SyncPassOutcome, SyncTransport } from "./transport";
 
 export interface SyncResult {
   ok: boolean;
@@ -34,6 +35,13 @@ export interface SyncResult {
   /** True if the merge had any conflicts (triggers the toast per ADR 0008). */
   hadConflicts: boolean;
   error?: string;
+  /** Opaque per-pass metadata (slice 8 e.g. webdavUrl hash). */
+  historyMeta?: Record<string, string>;
+}
+
+/** Options for {@link runSync} (slice 8: metadata stamping). */
+export interface SyncOptions {
+  historyMeta?: Record<string, string>;
 }
 
 /**
@@ -43,23 +51,26 @@ export interface SyncResult {
  * @param remote The remote Snapshot (imported from another device / built locally).
  * @returns A {@link SyncResult} describing the outcome.
  */
-export async function runSync(adapter: StoreAdapter, remote: Snapshot): Promise<SyncResult> {
+export async function runSync(
+  adapter: StoreAdapter,
+  remote: Snapshot,
+  opts?: SyncOptions,
+): Promise<SyncResult> {
   try {
-    // Load local snapshot
     const local = await adapter.loadSnapshot();
-
-    // Load the last-known common ancestor (the previous merged result)
     const revert = await loadRevertAncestor(adapter);
     const ancestor = revert?.snapshot ?? null;
-
-    // Merge
     const mergeResult = await merge(local, remote, ancestor);
-
-    // Persist the merged result atomically
     await adapter.saveSnapshot(mergeResult.merged);
-
-    // Append a merge entry to the history file
-    await appendHistory(adapter, local, remote, ancestor, mergeResult.merged, mergeResult.report);
+    await appendHistory(
+      adapter,
+      local,
+      remote,
+      ancestor,
+      mergeResult.merged,
+      mergeResult.report,
+      opts?.historyMeta,
+    );
 
     return {
       ok: true,
@@ -67,6 +78,7 @@ export async function runSync(adapter: StoreAdapter, remote: Snapshot): Promise<
       mergeResult,
       conflictCount: mergeResult.report.conflictCount,
       hadConflicts: mergeResult.report.conflictCount > 0,
+      ...(opts?.historyMeta ? { historyMeta: opts.historyMeta } : {}),
     };
   } catch (err) {
     return {
@@ -105,4 +117,69 @@ export async function revertLastMerge(adapter: StoreAdapter): Promise<boolean> {
   }
   await adapter.saveSnapshot(revert.snapshot);
   return true;
+}
+
+/**
+ * Run a complete WebDAV sync pass using a {@link SyncTransport}.
+ *
+ * Sequence:
+ *   1. acquireLock
+ *   2. pull remote raw content
+ *   3. parse via SnapshotSchema (empty -> null / not-found -> empty snapshot)
+ *   4. runSync (merge + persist local)
+ *   5. putAndUnlock the merged result back to remote
+ *   6. releaseLock (finally-guarded)
+ *
+ * Returns a {@link SyncPassOutcome} with a classified failure kind so the
+ * scheduler / UI can surface the status row without seeing raw URLs.
+ */
+export async function webdavSyncPass(
+  adapter: StoreAdapter,
+  transport: SyncTransport,
+  opts?: { historyMeta?: Record<string, string> },
+): Promise<SyncPassOutcome> {
+  let lockId: string | undefined;
+
+  try {
+    lockId = await transport.acquireLock();
+
+    // Pull remote raw content (null = no remote snapshot yet).
+    const remoteRaw = await transport.pull();
+    const remote: Snapshot =
+      remoteRaw !== null ? SnapshotSchema.parse(JSON.parse(remoteRaw)) : SnapshotSchema.parse({});
+
+    // Merge + persist locally.
+    const syncOpts = opts?.historyMeta ? { historyMeta: opts.historyMeta } : undefined;
+    const result = await runSync(adapter, remote, syncOpts);
+
+    if (result.ok) {
+      // Write merged result back to remote under the held lock.
+      const mergedRaw = JSON.stringify(result.merged);
+      await transport.put(lockId, mergedRaw);
+    }
+
+    return {
+      ok: result.ok,
+      kind: "unknown",
+      merged: result.merged,
+      ...(result.error ? { message: result.error } : {}),
+    };
+  } catch (err) {
+    const kind =
+      err && typeof err === "object" && "kind" in err
+        ? (err as { kind: import("./transport").SyncFailureKind }).kind
+        : "unknown";
+    return {
+      ok: false,
+      kind,
+      merged: SnapshotSchema.parse({}),
+      message: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    if (lockId !== undefined) {
+      await transport.releaseLock(lockId).catch(() => {
+        // Best-effort (lock timeout is the real backstop — ADR 0008 §B).
+      });
+    }
+  }
 }

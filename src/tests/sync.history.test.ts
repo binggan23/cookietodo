@@ -58,6 +58,33 @@ describe("sync history: append + read round-trip", () => {
     expect(entries[0]?.ancestorHash).toBeNull();
   });
 
+  it("stamps opaque sync metadata (webdavUrl hash) when provided", async () => {
+    const adapter = new MemoryStoreAdapter();
+    const local = snapshotFactory({ todos: [todoFactory({ title: "Local" })] });
+    const remote = snapshotFactory({ todos: [todoFactory({ title: "Remote" })] });
+
+    const mergeResult = await merge(local, remote, null);
+    await appendHistory(adapter, local, remote, null, mergeResult.merged, mergeResult.report, {
+      webdavUrl: "deadbeef1234",
+    });
+
+    const entries = await readHistory(adapter);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.metadata?.webdavUrl).toBe("deadbeef1234");
+  });
+
+  it("omits the metadata field when none is provided (manual transport)", async () => {
+    const adapter = new MemoryStoreAdapter();
+    const local = snapshotFactory();
+    const remote = snapshotFactory({ todos: [todoFactory({ title: "Remote" })] });
+
+    const mergeResult = await merge(local, remote, null);
+    await appendHistory(adapter, local, remote, null, mergeResult.merged, mergeResult.report);
+
+    const entries = await readHistory(adapter);
+    expect(entries[0]?.metadata).toBeUndefined();
+  });
+
   it("grows by exactly one line per sync pass", async () => {
     const adapter = new MemoryStoreAdapter();
     for (let i = 0; i < 3; i++) {
