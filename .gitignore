@@ -37,3 +37,4 @@ apps/electron/dist-electron/
 apps/electron/test-results/
 apps/electron/playwright-report/
 apps/electron/release/
+apps/electron/renderer-dist/
