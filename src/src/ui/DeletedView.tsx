@@ -1,20 +1,49 @@
 import { useTranslation } from "react-i18next";
 import type { List, Todo, Tombstone } from "../domain/types";
-import { useDeleted } from "../store/hooks";
+import { useDeleted, useReplaceSnapshot } from "../store/hooks";
+import { cookietodoStore } from "../store/store";
 
 /**
  * Recently-deleted items view (slice-3). Renders tombstones from the Store
  * snapshot, newest first.
- *
- * Restore/Purge action wiring deferred to slice 7 (GC) — the buttons are
- * rendered so the Wave 5 e2e selectors exist, but onClick is a no-op this
- * slice. The Wave 5 spec only asserts a tombstone appears after delete +
- * survives relaunch; restore/purge are not exercised. See task brief.
  */
 export function DeletedView(): JSX.Element {
   const { t } = useTranslation();
   const tombstones = useDeleted();
+  const replaceSnapshot = useReplaceSnapshot();
   const sorted = [...tombstones].sort((a, b) => b.deletedAt - a.deletedAt);
+
+  const handleRestore = (ts: Tombstone): void => {
+    const state = cookietodoStore.getState();
+    const snapshot = state.snapshot;
+    const deleted = snapshot.deleted.filter((d) => d.id !== ts.id);
+
+    if (ts.kind === "todo") {
+      const todo = ts.snapshot as Todo;
+      replaceSnapshot({
+        ...snapshot,
+        todos: [...snapshot.todos, todo],
+        deleted,
+      });
+    } else {
+      const list = ts.snapshot as List;
+      replaceSnapshot({
+        ...snapshot,
+        lists: [...snapshot.lists, list],
+        deleted,
+      });
+    }
+  };
+
+  const handlePurge = (ts: Tombstone): void => {
+    const state = cookietodoStore.getState();
+    const snapshot = state.snapshot;
+    const deleted = snapshot.deleted.filter((d) => d.id !== ts.id);
+    replaceSnapshot({
+      ...snapshot,
+      deleted,
+    });
+  };
 
   return (
     <section data-testid="recently-deleted" className="recently-deleted">
@@ -34,12 +63,12 @@ export function DeletedView(): JSX.Element {
                 <span className="tombstone-deleted-at">
                   {t("deleted.item-deleted-at", { time: new Date(ts.deletedAt).toLocaleString() })}
                 </span>
-                {/* Restore/Purge action wiring deferred to slice 7 (GC). */}
+                {/* Restore/Purge actions */}
                 <button
                   type="button"
                   data-testid={`tombstone.${ts.id}.restore`}
                   onClick={() => {
-                    /* no-op slice 3 */
+                    handleRestore(ts);
                   }}
                 >
                   {t("deleted.action-restore")}
@@ -48,7 +77,7 @@ export function DeletedView(): JSX.Element {
                   type="button"
                   data-testid={`tombstone.${ts.id}.purge`}
                   onClick={() => {
-                    /* no-op slice 3 */
+                    handlePurge(ts);
                   }}
                 >
                   {t("deleted.action-purge")}

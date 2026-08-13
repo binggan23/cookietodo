@@ -4,6 +4,7 @@ import type { List, Reminder, Todo } from "../domain/types";
 import {
   useClearRebootBanner,
   useDeleted,
+  useDeleteList,
   useDeleteTodo,
   useLists,
   useLoad,
@@ -35,6 +36,7 @@ export function HomeView(): JSX.Element {
   const [mode, setMode] = useState<Mode>("flat");
   const [form, setForm] = useState<OverlayForm>(null);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
+  const [editingList, setEditingList] = useState<List | null>(null);
 
   useEffect(() => {
     if (!loaded) {
@@ -133,7 +135,15 @@ export function HomeView(): JSX.Element {
         <p>{t("home.empty")}</p>
       ) : (
         <div className="home-body">
-          {lists.length > 0 && <ListSummary lists={lists} />}
+          {lists.length > 0 && (
+            <ListSummary
+              lists={lists}
+              onEdit={(list) => {
+                setEditingList(list);
+                setForm("list");
+              }}
+            />
+          )}
           {showLoading ? null : mode === "flat" ? (
             <TodoList todos={todos} onToggle={toggleCompleted} onDelete={deleteTodo} />
           ) : (
@@ -158,7 +168,15 @@ export function HomeView(): JSX.Element {
           }}
         />
       )}
-      {form === "list" && <ListForm onClose={() => setForm(null)} />}
+      {form === "list" && (
+        <ListForm
+          list={editingList ?? undefined}
+          onClose={() => {
+            setForm(null);
+            setEditingList(null);
+          }}
+        />
+      )}
       {form === "settings" && <SettingsView onClose={() => setForm(null)} />}
     </div>
   );
@@ -166,14 +184,30 @@ export function HomeView(): JSX.Element {
 
 interface ListSummaryProps {
   lists: List[];
+  onEdit: (list: List) => void;
 }
 
-function ListSummary({ lists }: ListSummaryProps): JSX.Element {
+function ListSummary({ lists, onEdit }: ListSummaryProps): JSX.Element {
+  const { t } = useTranslation();
+  const deleteList = useDeleteList();
+
+  const handleDelete = (list: List): void => {
+    if (window.confirm(t("list.confirm-delete", { name: list.name }))) {
+      deleteList(list.id);
+    }
+  };
+
   return (
     <ul className="list-summary" aria-label="Lists">
       {lists.map((list) => (
         <li key={list.id} style={list.color ? { color: list.color } : undefined}>
           {list.name}
+          <button type="button" onClick={() => onEdit(list)}>
+            {t("list.action-edit")}
+          </button>
+          <button type="button" onClick={() => handleDelete(list)}>
+            {t("list.action-delete")}
+          </button>
         </li>
       ))}
     </ul>

@@ -96,7 +96,10 @@
     "action-save": "保存",
     "validation-name-required": "请填写清单名",
     "validation-name-too-long": "清单名不能超过 80 个字符",
-    "color-default": "默认"
+    "color-default": "默认",
+    "action-edit": "编辑",
+    "action-delete": "删除",
+    "confirm-delete": "删除清单「{{name}}」？"
   },
   "deleted": {
     "heading": "最近删除",

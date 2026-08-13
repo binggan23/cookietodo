@@ -46,18 +46,7 @@ import { resolveAlarmSoundUrl } from "./assetPath.js";
 const __dirname_subst = dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.ELECTRON_IS_DEV === "1";
 const RENDERER_DEV_URL = "http://localhost:5173";
-const RENDERER_PROD_PATH = join(
-  __dirname_subst,
-  "..",
-  "..",
-  "..",
-  "..",
-  "node_modules",
-  "@cookietodo",
-  "renderer",
-  "dist",
-  "index.html",
-);
+const RENDERER_PROD_PATH = join(__dirname_subst, "..", "..", "renderer-dist", "index.html");
 
 /** Window options matching AC #3 — flat fullscreen alarm takeover. */
 const ALARM_WINDOW_OPTS = {

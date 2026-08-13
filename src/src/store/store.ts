@@ -552,8 +552,28 @@ export function createCookietodoStore(
 
       async load(): Promise<void> {
         try {
-          const snapshot = SnapshotSchema.parse(await adapter.loadSnapshot());
-          set({ snapshot, loaded: true, error: null });
+          let snapshot = SnapshotSchema.parse(await adapter.loadSnapshot());
+          // First launch: auto-create a "Default" list when no lists exist.
+          if (snapshot.lists.length === 0) {
+            const now = Date.now();
+            snapshot = SnapshotSchema.parse({
+              ...snapshot,
+              lists: [
+                {
+                  id: ulid() as List["id"],
+                  name: "Default",
+                  color: null,
+                  createdAt: now,
+                  updatedAt: now,
+                  revision: 0,
+                },
+              ],
+            });
+            set({ snapshot, loaded: true, error: null });
+            persist();
+          } else {
+            set({ snapshot, loaded: true, error: null });
+          }
         } catch (err) {
           if (err instanceof z.ZodError) {
             set({ loaded: true, error: err.message });

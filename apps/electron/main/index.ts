@@ -33,13 +33,7 @@ import { createWebDAVTransport } from "./webdavTransport.js";
 const __dirname_subst = dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.ELECTRON_IS_DEV === "1";
 const RENDERER_DEV_URL = "http://localhost:5173";
-const RENDERER_PROD_PATH = join(
-  __dirname_subst,
-  "..",
-  "..",
-  "renderer-dist",
-  "index.html",
-);
+const RENDERER_PROD_PATH = join(__dirname_subst, "..", "..", "renderer-dist", "index.html");
 
 // Slice 5: the custom alarm-sound scheme must be declared privileged BEFORE
 // app readiness (Electron API contract); the protocol handler itself is

@@ -96,7 +96,10 @@
     "action-save": "Save",
     "validation-name-required": "List name is required",
     "validation-name-too-long": "List name must be 80 characters or fewer",
-    "color-default": "Default"
+    "color-default": "Default",
+    "action-edit": "Edit",
+    "action-delete": "Delete",
+    "confirm-delete": "Delete list \"{{name}}\"?"
   },
   "deleted": {
     "heading": "Recently Deleted",
